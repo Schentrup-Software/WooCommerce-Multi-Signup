@@ -6,7 +6,12 @@
         {
             "label": "Deploy Plugin",
             "type": "shell",
-            "command": "cp -av apt-checkout-fields-for-blocks /var/www/html/wp-content/plugins"
+            "command": "cp -a apt-checkout-fields-for-blocks /var/www/html/wp-content/plugins",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         }
     ]
 }
