@@ -1,8 +1,0 @@
-.wp-block-checkout-fields-for-blocks-select-block {
-	select {
-		max-width: 100%;
-	}
-	&.has-error .wc-blocks-components-select .wc-blocks-components-select__select option{
-		color: $input-text-active;
-	}
-}
