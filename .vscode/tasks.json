@@ -6,7 +6,7 @@
         {
             "label": "Deploy Plugin",
             "type": "shell",
-            "command": "cp -a apt-checkout-fields-for-blocks /var/www/html/wp-content/plugins",
+            "command": "cd ${workspaceFolder}/woocommerce-multi-signup && npm run local-build",
             "problemMatcher": [],
             "group": {
                 "kind": "build",

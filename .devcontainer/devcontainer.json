@@ -19,5 +19,5 @@
         }
     },
     // Add the IDs of extensions you want installed when the container is created.
-    "postCreateCommand": "apt-get update && apt-get install -y git && curl -sL https://deb.nodesource.com/setup_20.x -o /tmp/nodesource_setup.sh && bash /tmp/nodesource_setup.sh && apt-get install -y nodejs && npm install -g npm",
+    "postCreateCommand": "apt-get update && apt-get install -y git rsync && curl -sL https://deb.nodesource.com/setup_20.x -o /tmp/nodesource_setup.sh && bash /tmp/nodesource_setup.sh && apt-get install -y nodejs && npm install -g npm",
 }
