@@ -5,6 +5,14 @@
 	"author": "The WordPress Contributors",
 	"license": "GPL-2.0-or-later",
 	"main": "build/index.js",
+	"devDependencies": {
+		"@woocommerce/block-library": "^2.3.0",
+		"@woocommerce/dependency-extraction-webpack-plugin": "^2.2.0",
+		"@woocommerce/eslint-plugin": "^2.2.0",
+		"@wordpress/blocks": "^12.6.0",
+		"@wordpress/components": "^23.8.0",
+		"@wordpress/scripts": "^26.0.0"
+	},
 	"scripts": {
 		"build": "wp-scripts build",
 		"format": "wp-scripts format",
@@ -12,15 +20,6 @@
 		"lint:js": "wp-scripts lint-js",
 		"packages-update": "wp-scripts packages-update",
 		"plugin-zip": "wp-scripts plugin-zip",
-		"start": "wp-scripts start",
-		"local-build": "echo 'Building...' && wp-scripts build && echo 'Copying...' && cp -a woocommerce-multi-signup.php /var/www/html/wp-content/plugins/woocommerce-multi-signup/woocommerce-multi-signup.php && cp -a build /var/www/html/wp-content/plugins/woocommerce-multi-signup"
-	},
-	"devDependencies": {
-		"@wordpress/scripts": "^30",
-		"@wordpress/components": "^29",
-		"@wordpress/blocks": "^14",
-		"@woocommerce/block-library": "^2",
-		"@woocommerce/dependency-extraction-webpack-plugin": "^3",
-		"@woocommerce/eslint-plugin": "^2"
+		"start": "wp-scripts start"
 	}
 }
