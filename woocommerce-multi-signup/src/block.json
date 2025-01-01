@@ -1,12 +1,12 @@
 {
     "$schema": "https://schemas.wp.org/trunk/block.json",
     "apiVersion": 2,
-    "name": "checkout-block-example/delivery-date",
+    "name": "woocommerce-multi-signup/delivery-date",
     "version": "1.0.0",
-    "title": "Delivery Date",
+    "title": "Student Data",
     "category": "woocommerce",
     "parent": [
-        "woocommerce/checkout-shipping-address-block"
+        "woocommerce/checkout-contact-information-block"
     ],
     "attributes": {
         "lock": {
@@ -17,6 +17,6 @@
             }
         }
     },
-    "textdomain": "checkout-block-example",
+    "textdomain": "woocommerce-multi-signup",
     "editorScript": "file:./build/index.js"
 }

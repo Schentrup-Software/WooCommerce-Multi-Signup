@@ -6,8 +6,7 @@
         {
             "label": "Deploy Plugin",
             "type": "shell",
-            "command": "cd ${workspaceFolder}/woocommerce-multi-signup && npm run local-build",
-            "problemMatcher": [],
+            "command": "cd ${workspaceFolder}/woocommerce-multi-signup && npm run build",
             "group": {
                 "kind": "build",
                 "isDefault": true

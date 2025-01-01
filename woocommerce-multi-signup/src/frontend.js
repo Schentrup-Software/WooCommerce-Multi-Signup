@@ -1,36 +1,33 @@
-import { ValidatedTextInput } from '@woocommerce/blocks-checkout';
 import metadata from './block.json';
+import { ValidatedTextInput } from '@woocommerce/blocks-checkout';
 import { __ } from '@wordpress/i18n';
-import { useState, useCallback } from '@wordpress/element';
+
+
 // Global import
 const { registerCheckoutBlock } = wc.blocksCheckout;
-const Block = ({ checkoutExtensionData }) => {
-    const [deliveryDate, setDeliveryDate] = useState('');
-    const { setExtensionData } = checkoutExtensionData;
-    const onDateChange = useCallback(
-        (date) => {
-            setDeliveryDate(date);
-            setExtensionData('checkout-block-example', 'delivery_date', date);
-        },
-        [setDeliveryDate, setExtensionData]
-    );
+console.log(wc.blocksCheckout);
+
+
+const Block = ({ children, checkoutExtensionData }) => {
     return (
         <div className={'example-fields'}>
-            <label htmlFor="delivery-date">Choose your delivery date:</label>
-            <input
-                type="date"
-                id="delivery-date"
-                className={'orddd-datepicker'}
-                placeholder={''}
-                value={deliveryDate}
-                onChange={(e) => onDateChange(e.target.value)}
-                style={{ width: '100%' }}
+            <ValidatedTextInput
+                id="student_data"
+                type="text"
+                required={false}
+                className={'student_data'}
+                label={
+                    'Student Data'
+                }
+                value={''}
             />
         </div>
-    );
+    )
 }
+
 const options = {
     metadata,
     component: Block
 };
+
 registerCheckoutBlock(options);

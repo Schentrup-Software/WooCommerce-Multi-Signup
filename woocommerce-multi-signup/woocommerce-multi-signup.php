@@ -1,105 +1,49 @@
 <?php
 /**
+ * Plugin Name: Woocommerce Multi Signup
+ * Description: This plugin allows customers sign up multiple students for a class in a single checkout.
+ * Author: Schentrup Software LLC
+ * Version: 1.0.0
+ * Author URI: https://www.schentrupsoftware.com/
+ * Contributor: Joey Schentrup, https://www.schentrupsoftware.com/
+ * Text Domain: woocommerce-multi-signup
+ * Requires PHP: 5.6
+ * WC requires at least: 3.0.0
+ * WC tested up to: 7.1.0
  *
+ * @package  woocommerce-multi-signup-Lite-for-WooCommerce
  */
-use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
-define( 'ORDD_BLOCK_VERSION', '1.0.0' );
-class Blocks_Integration implements IntegrationInterface {
-    /**
-     * The name of the integration.
-     *
-     * @return string
-     */
-    public function get_name() {
-        return 'date-field'; // Updated integration name
+require_once 'woocommerce-multi-signup-init.php';
+
+class Woocommerce_Multi_Signup {
+    public function __construct() {
+        add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'orddd_update_block_order_meta_student_data' ), 10, 2 );
+        add_action( 'woocommerce_admin_order_data_after_order_details', array( $this, 'display_student_data_on_admin_order_details' ) );
+        add_action( 'woocommerce_order_details_after_order_table_items', array( $this, 'display_student_data_on_thankyou_page' ) );
     }
-    /**
-     * When called invokes any initialization/setup for the integration.
-     */
-    public function initialize() {
-        $this->register_block_frontend_scripts();
-        $this->register_block_editor_scripts();
-    }
-    /**
-     * Returns an array of script handles to enqueue in the frontend context.
-     *
-     * @return string[]
-     */
-    public function get_script_handles() {
-        return array( 'checkout-block-frontend' ); // Updated script handle
-    }
-    /**
-     * Returns an array of script handles to enqueue in the editor context.
-     *
-     * @return string[]
-     */
-    public function get_editor_script_handles() {
-        return array( 'date-field-block-editor' ); // Updated script handle
-    }
-    /**
-     * An array of key, value pairs of data made available to the block on the client side.
-     *
-     * @return array
-     */
-    public function get_script_data() {
-        return array();
-    }
-    /**
-     * Register scripts for date field block editor.
-     *
-     * @return void
-     */
-    public function register_block_editor_scripts() {
-        $script_path       = '/build/index.js';
-        $script_url        = plugins_url( 'checkout-block-example' . $script_path );
-        $script_asset_path = plugins_url( 'checkout-block-example/build/index.asset.php' );
-        $script_asset      = file_exists( $script_asset_path )
-            ? require $script_asset_path
-            : array(
-                'dependencies' => array(),
-                'version'      => $this->get_file_version( $script_asset_path ),
-            );
-        wp_register_script(
-            'date-field-block-editor', // Updated script handle
-            $script_url,
-            $script_asset['dependencies'],
-            $script_asset['version'],
-            true
-        );
-    }
-    /**
-     * Register scripts for frontend block.
-     *
-     * @return void
-     */
-    public function register_block_frontend_scripts() {
-        $script_path       = '/build/checkout-block-frontend.js';
-        $script_url        = plugins_url( '/checkout-block-example' . $script_path );
-        $script_asset_path = WP_PLUGIN_DIR . '/checkout-block-example/build/checkout-block-frontend.asset.php';
-        $script_asset = file_exists( $script_asset_path )
-            ? require $script_asset_path
-            : array(
-                'dependencies' => array(),
-                'version'      => $this->get_file_version( $script_asset_path ),
-            );
-        wp_register_script(
-            'checkout-block-frontend',
-            $script_url,
-            $script_asset['dependencies'],
-            $script_asset['version'],
-            true
-        );
-    }
-    /**
-     * Get the file modified time as a cache buster if we're in dev mode.
-     *
-     * @param string $file Local path to the file.
-     * @return string The cache buster value to use for the given file.
-     */
-    protected function get_file_version( $file ) {
-        if ( defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG && file_exists( $file ) ) {
-            return filemtime( $file );
+    public function orddd_update_block_order_meta_student_data( $order, $request ) {
+        $data = isset( $request['extensions']['woocommerce-multi-signup'] ) ? $request['extensions']['woocommerce-multi-signup'] : array();
+        // Update the order meta with the delivery date from the request
+        if ( isset( $data['student_data'] ) ) {
+            $order->update_meta_data( 'Student Data', $data['student_data'] );
+            $order->save(); // Save the order to persist changes
         }
-        return ORDD_BLOCK_VERSION;
+    }
+    public function display_student_data_on_admin_order_details( $order ) {
+        $student_data = $order->get_meta( 'Student Data', true );
+        if ( $student_data ) {
+            echo '<div class="delivery-date">';
+            echo '<p><strong>' . esc_html__( 'Student Data:', 'woocommerce-multi-signup' ) . '</strong> ' . esc_html( $student_data ) . '</p>';
+            echo '</div>';
+        }
+    }
+    public function display_student_data_on_thankyou_page( $order_id ) {
+        $order = wc_get_order( $order_id );
+        $student_data = $order->get_meta( 'Student Data', true );
+        if ( $student_data ) {
+            echo '<p>' . esc_html__( 'Student Data:', 'woocommerce-multi-signup' ) . ' ' . esc_html( $student_data ) . '</p>';
+        }
     }
 }
+
+$woocommerce_multi_signup = new Woocommerce_Multi_Signup();

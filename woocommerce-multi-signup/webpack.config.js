@@ -10,7 +10,7 @@ module.exports = {
 	...defaultConfig,
 	entry: {
 		index: path.resolve(process.cwd(), 'src', 'index.js'),
-		'checkout-block-frontend':
+		'woocommerce-multi-signup-frontend':
 			path.resolve(
 				process.cwd(),
 				'src',
