@@ -32,6 +32,10 @@ class Woocommerce_Multi_Signup {
 			return;
 		}
 
+		//TODO: Check the order to make sure we are not enrolling more people than were paid for
+
+		//TODO: Unenroll the person who paid for the course
+
 		foreach ($student_data->student_data as $student) {
 			$user = get_user_by( 'email', $student->student_email );
 			if ( !$user ) {

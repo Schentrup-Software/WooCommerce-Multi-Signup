@@ -90,6 +90,10 @@ const Block = ({ children, checkoutExtensionData }) => {
         });
     }
 
+    if (cartItems?.length == 0 || cartItems.reduce((acc, item) => acc + item.quantity, 0) < 2) {
+        return null;
+    }
+
     return (
         <>
             <h2 class={"wc-block-components-title"}>Student Info</h2>
