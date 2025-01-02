@@ -19,17 +19,22 @@ const Block = ({ children, checkoutExtensionData }) => {
     });
 
     const onInputChange = useCallback(
-        (value, key, number, field) => {
-            if (!studentData.students[key]) {
-                studentData.students[key] = {};
+        (value, item, number, field) => {
+            if (!studentData.students[item.id]) {
+                studentData.students[item.id] = {};
             }
-            if (!studentData.students[key][number]) {
-                studentData.students[key][number] = {};
+            if (!studentData.students[item.id][number]) {
+                studentData.students[item.id][number] = {
+                    firstName: '',
+                    lastName: '',
+                    email: '',
+                    courseName: item.name,
+                };
             }
-            studentData.students[key][number][field] = value;
+            studentData.students[item.id][number][field] = value;
 
             setStudentData(studentData);
-            setExtensionData('woocommerce-multi-signup', 'student_data', value);
+            setExtensionData('woocommerce-multi-signup', 'student_data', JSON.stringify(studentData));
         },
         [setStudentData, setExtensionData]
     )
@@ -55,7 +60,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                             'First Name'
                         }
                         value={studentData.students?.[item.key]?.[studentNumber]?.firstName || ''}
-                        onChange={(value) => onInputChange(value, item.key, studentNumber, 'firstName')}
+                        onChange={(value) => onInputChange(value, item, studentNumber, 'firstName')}
                     />
                     <ValidatedTextInput
                         id={"student_data_last_name_" + studentNumber}
@@ -66,7 +71,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                             'Last Name'
                         }
                         value={studentData.students?.[item.key]?.[studentNumber]?.lastName || ''}
-                        onChange={(value) => onInputChange(value, item.key, studentNumber, 'lastName')}
+                        onChange={(value) => onInputChange(value, item, studentNumber, 'lastName')}
                     />
                     <ValidatedTextInput
                         id={"student_data_email_" + studentNumber}
@@ -77,7 +82,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                             'Email'
                         }
                         value={studentData.students?.[item.key]?.[studentNumber]?.email || ''}
-                        onChange={(value) => onInputChange(value, item.key, studentNumber, 'email')}
+                        onChange={(value) => onInputChange(value, item, studentNumber, 'email')}
                     />
                 </div>
 
