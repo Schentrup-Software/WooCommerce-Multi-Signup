@@ -13,8 +13,8 @@
  *
  * @package  woocommerce-multi-signup-Lite-for-WooCommerce
  */
-require_once 'woocommerce-multi-signup-init.php';
-require_once 'woocommerce-multi-signup-data.php';
+require_once 'php/woocommerce-multi-signup-init.php';
+require_once 'php/woocommerce-multi-signup-data.php';
 
 class Woocommerce_Multi_Signup {
     public function __construct() {
@@ -72,13 +72,19 @@ class Woocommerce_Multi_Signup {
 
 			$user = get_user_by( 'email', $student->student_email );
 			if ( !$user ) {
+				remove_all_filters( 'wp_pre_insert_user_data' ); // Remove any filters that might prevent user creation
 				$user_id = wp_create_user( $student->student_email, wp_generate_password(), $student->student_email );
-				$user = get_user_by( 'id', $user_id );
-			}
+				if ( is_wp_error( $user_id ) ) {
+					$this->send_error_email('Error creating user for student ' . $student->student_email . ' for order ' . $this->get_order_link($order_id) . ': ' . $user_id->get_error_message());
+					continue;
+				}
 
-			$user->first_name = $student->student_first_name;
-			$user->last_name = $student->student_last_name;
-			wp_update_user( $user );
+				$user = get_user_by( 'id', $user_id );
+
+				$user->first_name = $student->student_first_name;
+				$user->last_name = $student->student_last_name;
+				wp_update_user( $user );
+			}
 
 			$llms_products = llms_wc_get_order_item_products( $order_items[$student->course_product_id]['item'] );
 

@@ -21,5 +21,14 @@
 		"packages-update": "wp-scripts packages-update",
 		"plugin-zip": "wp-scripts plugin-zip",
 		"start": "wp-scripts start --webpack-copy-php"
-	}
+	},
+	"files": [
+		"build",
+		"src",
+		"package.json",
+		"package-lock.json",
+		"readme.md",
+		"php",
+		"woocommerce-multi-signup.php"
+	]
 }
