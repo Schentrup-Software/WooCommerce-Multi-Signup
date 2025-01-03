@@ -23,7 +23,7 @@ class Woocommerce_Multi_Signup {
         add_action( 'woocommerce_order_details_before_order_table', array( $this, 'display_student_data_on_thankyou_page' ) );
 		// Priority 11 to run after LifterLMS
 		add_action( 'woocommerce_order_status_completed', array( $this, 'student_enroll_on_woocommerce_payment_complete' ), 11, 1 );
-		add_filter( 'wp_new_user_notification_email', 'custom_wp_new_user_notification_email', 10, 3 );
+		add_filter( 'wp_new_user_notification_email', array( $this, 'custom_wp_new_user_notification_email'), 10, 3 );
     }
 
 	public function student_enroll_on_woocommerce_payment_complete( $order_id ) {
@@ -84,6 +84,9 @@ class Woocommerce_Multi_Signup {
 				$user->first_name = $student->student_first_name;
 				$user->last_name = $student->student_last_name;
 				wp_update_user( $user );
+
+				remove_all_filters( 'wp_send_new_user_notification_to_user' ); // Remove any filters that might prevent user notification
+				wp_send_new_user_notifications( $user_id, 'user' );
 			}
 
 			$llms_products = llms_wc_get_order_item_products( $order_items[$student->course_product_id]['item'] );
@@ -123,6 +126,7 @@ class Woocommerce_Multi_Signup {
 
 		$wp_new_user_notification_email['message'] = $message;
 		$wp_new_user_notification_email['headers'] = "From: $blogname<$admin_email>";
+		$wp_new_user_notification_email['subject'] = "Welcome to $blogname!";
 
 		return $wp_new_user_notification_email;
 	}
