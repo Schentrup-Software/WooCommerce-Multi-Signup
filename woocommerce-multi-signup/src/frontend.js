@@ -59,7 +59,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                         label={
                             'First Name'
                         }
-                        value={studentData.students?.[item.key]?.[studentNumber]?.firstName || ''}
+                        value={studentData.students?.[item.id]?.[studentNumber]?.firstName || ''}
                         onChange={(value) => onInputChange(value, item, studentNumber, 'firstName')}
                     />
                     <ValidatedTextInput
@@ -70,7 +70,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                         label={
                             'Last Name'
                         }
-                        value={studentData.students?.[item.key]?.[studentNumber]?.lastName || ''}
+                        value={studentData.students?.[item.id]?.[studentNumber]?.lastName || ''}
                         onChange={(value) => onInputChange(value, item, studentNumber, 'lastName')}
                     />
                     <ValidatedTextInput
@@ -81,7 +81,7 @@ const Block = ({ children, checkoutExtensionData }) => {
                         label={
                             'Email'
                         }
-                        value={studentData.students?.[item.key]?.[studentNumber]?.email || ''}
+                        value={studentData.students?.[item.id]?.[studentNumber]?.email || ''}
                         onChange={(value) => onInputChange(value, item, studentNumber, 'email')}
                     />
                 </div>
