@@ -94,12 +94,12 @@ class Woocommerce_Multi_Signup {
 			}
 
 			foreach ( $llms_products as $llms_product_id ) {
-				if (llms_is_user_enrolled( $user->ID, $llms_product_id )) {
+				if ( llms_is_user_enrolled( $user->ID, $llms_product_id ) ) {
 					$this->send_error_email("Student $student->student_email is already in course $student->course_name for order " . $this->get_order_link($order_id));
 					continue;
 				}
 
-				if ( !llms_enroll_student( $user->ID, $llms_product_id, 'wc_multi_order_' . $order_id ) ) {
+				if ( !llms_enroll_student( $user->ID, $llms_product_id, 'wc_order_' . $order_id ) ) {
 					$this->send_error_email("Error enrolling student $student->student_email in course $student->course_name for order " . $this->get_order_link($order_id));
 					continue 2;
 				}
