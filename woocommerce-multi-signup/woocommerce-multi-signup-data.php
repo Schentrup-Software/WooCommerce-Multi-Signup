@@ -23,11 +23,10 @@ class Woocommerce_Multi_Signup_Data
 	public function __construct(string $data) {
 		$parsedData = json_decode($data, true);
 		$student_data = [];
-
 		foreach ($parsedData['students'] as $product_id => $course_student) {
-			foreach ($product_id as $student) {
+			foreach ($course_student as $student) {
 				$student_data[] = new Woocommerce_Multi_Signup_Data_Student(
-					$course_key,
+					$product_id,
 					$student['courseName'] ?? 'test',
 					$student['firstName'] ?? '',
 					$student['lastName'] ?? '',
