@@ -1,0 +1,27 @@
+{
+	"name": "schentrup/woocommerce-multi-signup",
+	"description": "WooCommerce Multi Signup Plugin",
+	"type": "wordpress-plugin",
+	"require": {
+		"php": ">=5.6"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^9.0",
+		"brain/monkey": "^2.6",
+		"mockery/mockery": "^1.4"
+	},
+	"autoload": {
+		"psr-4": {
+			"WoocommerceMultiSignup\\": "php/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"WoocommerceMultiSignup\\Tests\\": "tests/"
+		}
+	},
+	"scripts": {
+		"test": "phpunit",
+		"test-coverage": "phpunit --coverage-html coverage"
+	}
+}
