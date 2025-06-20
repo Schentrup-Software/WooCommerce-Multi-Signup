@@ -7,7 +7,7 @@
 	"main": "build/index.js",
 	"devDependencies": {
 		"@woocommerce/block-library": "^2.3.0",
-		"@woocommerce/dependency-extraction-webpack-plugin": "^3.0.1",
+		"@woocommerce/dependency-extraction-webpack-plugin": "^3.1.0",
 		"@woocommerce/eslint-plugin": "^2.2.0",
 		"@wordpress/blocks": "^12.6.0",
 		"@wordpress/components": "^23.8.0",

@@ -3,7 +3,7 @@
  * Plugin Name: Woocommerce Multi Signup
  * Description: This plugin allows customers sign up multiple students for a class in a single checkout.
  * Author: Schentrup Software LLC
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author URI: https://www.schentrupsoftware.com/
  * Contributor: Joey Schentrup, https://www.schentrupsoftware.com/
  * Text Domain: woocommerce-multi-signup

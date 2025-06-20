@@ -1,4 +1,3 @@
-import { ValidatedTextInput } from '@woocommerce/blocks-checkout';
 import {
     useBlockProps,
 } from '@wordpress/block-editor';

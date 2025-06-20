@@ -1,16 +1,16 @@
 import { __ } from '@wordpress/i18n';
 import { useState, useCallback } from '@wordpress/element';
-import { ValidatedTextInput } from '@woocommerce/blocks-checkout';
+import { ValidatedTextInput } from '@woocommerce/blocks-components';
 import { useSelect } from '@wordpress/data';
 
 import metadata from './block.json';
-
 
 // Global import
 const { registerCheckoutBlock, registerCheckoutFilters } = wc.blocksCheckout;
 
 const Block = ({ children, checkoutExtensionData }) => {
     const [studentData, setStudentData] = useState({ students: {} });
+    const [signupOtherStudent, setSignupOtherStudent] = useState(false);
     const { setExtensionData } = checkoutExtensionData;
 
     const cartItems = useSelect((select) => {
@@ -90,20 +90,38 @@ const Block = ({ children, checkoutExtensionData }) => {
         });
     }
 
-    if (cartItems?.length == 0 || cartItems.reduce((acc, item) => acc + item.quantity, 0) < 2) {
+    if (cartItems?.length == 0) {
         return null;
     }
+
+    const isSingleItem = cartItems.reduce((acc, item) => acc + item.quantity, 0) === 1;
 
     return (
         <>
             <h2 class={"wc-block-components-title"}>Student Info</h2>
-            <p
-                class={"wc-block-components-checkout-step__description"}
-                style={{ marginTop: "1em" }}
-            >
-                This infomation will be used to register the students. Information to set up their account will be sent to the provided email.
-            </p>
-            {cartItems.map((item) => getFormatFromItem(item))}
+            {isSingleItem && (
+                <div style={{ marginBottom: "1em", marginTop: "1em" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <input
+                            type="checkbox"
+                            checked={signupOtherStudent}
+                            onChange={(e) => setSignupOtherStudent(e.target.checked)}
+                        />
+                        <span>Sign up a different student (not myself)</span>
+                    </label>
+                </div>
+            )}
+            {(signupOtherStudent || !isSingleItem) && (
+                <>
+                    <p
+                        class={"wc-block-components-checkout-step__description"}
+                        style={{ marginTop: "1em" }}
+                    >
+                        This infomation will be used to register the students. Information to set up their account will be sent to the provided email.
+                    </p>
+                    {cartItems.map((item) => getFormatFromItem(item))}
+                </>
+            )}
         </>
     )
 }
