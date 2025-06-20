@@ -35,7 +35,7 @@ class Woocommerce_Multi_Signup {
 
 		$student_data = new Woocommerce_Multi_Signup_Data( $student_data );
 
-		if (count($student_data->student_data) < 2) {
+		if (count($student_data->student_data) < 1) {
 			return;
 		}
 

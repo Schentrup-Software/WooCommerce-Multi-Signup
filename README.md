@@ -1,6 +1,12 @@
-# Wordpress Development Container
+# Woocommerce Multi Signup
 
-This is a skelton of a project that allows you to easily set up VS Code to begin doing [Wordpress](https://wordpress.org/) plugin development immediately.
+This project is to be used along with the following 3 plugins in Wordpress:
+
+* WooCommerce
+* LifterLMS
+* LifterLMS WooCommerce
+
+This plugin allows customers sign up multiple students or a different student for a class in a single checkout.
 
 ## Prerequisites
 
@@ -30,8 +36,3 @@ This is a skelton of a project that allows you to easily set up VS Code to begin
 ## Notes
 
 * The first time you open your wordpress instance you will need to go through the installation process. You only need to do this once unless you clear your my sql db volume.
-* I would suggest renaming the folder from `my-new-plugin` to something more appropriate to your plugin. Once you do that, you will need to update  [tasks.json](.vscode\tasks.json) with the new folder name
-
-## Known issues
-
-* Sometimes the compose gets in a bad state after making changes to the file. You may need to delete the containers manually and prune your volumes to get it to start correctly again.

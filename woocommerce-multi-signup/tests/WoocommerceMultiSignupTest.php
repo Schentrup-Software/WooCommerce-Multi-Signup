@@ -167,32 +167,6 @@ class WoocommerceMultiSignupTest extends TestCase {
         $this->assertTrue(true); // Test passes if no exceptions
     }
 
-    public function testStudentEnrollmentWithSingleStudent() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'John',
-                        'lastName' => 'Doe',
-                        'email' => 'john.doe@example.com'
-                    ]
-                ]
-            ]
-        ]);
-
-        $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
-        $order->shouldReceive('get_user_id')->andReturn(456);
-
-        Functions\when('wc_get_order')->justReturn($order);
-
-        // Should return early if less than 2 students
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
-
-        $this->assertTrue(true); // Test passes if no exceptions
-    }
-
     public function testDisplayMultipleStudentsOnAdminOrderDetails() {
         $studentData = json_encode([
             'students' => [
