@@ -19,7 +19,7 @@
 		"lint:css": "wp-scripts lint-style",
 		"lint:js": "wp-scripts lint-js",
 		"packages-update": "wp-scripts packages-update",
-		"plugin-zip": "wp-scripts plugin-zip",
+		"plugin-zip": "node ./scripts/make-plugin-zip.js",
 		"start": "wp-scripts start --webpack-copy-php"
 	},
 	"files": [
