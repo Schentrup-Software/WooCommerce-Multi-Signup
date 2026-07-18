@@ -3,18 +3,37 @@
  * Plugin Name: Woocommerce Multi Signup
  * Description: This plugin allows customers sign up multiple students for a class in a single checkout.
  * Author: Schentrup Software LLC
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author URI: https://www.schentrupsoftware.com/
  * Contributor: Joey Schentrup, https://www.schentrupsoftware.com/
  * Text Domain: woocommerce-multi-signup
  * Requires PHP: 5.6
  * WC requires at least: 3.0.0
- * WC tested up to: 7.1.0
+ * WC tested up to: 9.9.0
  *
  * @package  woocommerce-multi-signup-Lite-for-WooCommerce
  */
 require_once 'php/woocommerce-multi-signup-init.php';
 require_once 'php/woocommerce-multi-signup-data.php';
+
+// Declare compatibility with WooCommerce features (HPOS and Cart/Checkout Blocks).
+add_action(
+	'before_woocommerce_init',
+	function() {
+		if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility(
+				'custom_order_tables',
+				__FILE__,
+				true
+			);
+			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility(
+				'cart_checkout_blocks',
+				__FILE__,
+				true
+			);
+		}
+	}
+);
 
 class Woocommerce_Multi_Signup {
     public function __construct() {
