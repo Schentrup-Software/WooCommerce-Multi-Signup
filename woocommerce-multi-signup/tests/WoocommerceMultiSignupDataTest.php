@@ -11,6 +11,7 @@ class WoocommerceMultiSignupDataTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
         Monkey\setUp();
+        wcms_default_stubs();
 
         // Include the classes we're testing
         require_once __DIR__ . '/../php/woocommerce-multi-signup-data.php';
@@ -130,11 +131,37 @@ class WoocommerceMultiSignupDataTest extends TestCase {
     }
 
     public function testMultiSignupDataWithInvalidJson() {
-        $this->expectError();
-        $this->expectErrorMessage('Trying to access array offset on value of type null');
+        $data = new Woocommerce_Multi_Signup_Data("invalid json string");
 
-        $invalidJson = "invalid json string";
-        new Woocommerce_Multi_Signup_Data($invalidJson);
+        $this->assertSame([], $data->student_data);
+    }
+
+    public function testMultiSignupDataWithMalformedStudents() {
+        $data = new Woocommerce_Multi_Signup_Data(json_encode(['students' => 'nope']));
+        $this->assertSame([], $data->student_data);
+
+        $data = new Woocommerce_Multi_Signup_Data(json_encode(['students' => ['123' => 'nope']]));
+        $this->assertSame([], $data->student_data);
+    }
+
+    public function testGetStudentsForProducts() {
+        $data = new Woocommerce_Multi_Signup_Data(json_encode([
+            'students' => [
+                '123' => [
+                    ['email' => 'a@example.com'],
+                    ['email' => 'b@example.com'],
+                ],
+                '456' => [
+                    ['email' => 'c@example.com'],
+                ],
+            ]
+        ]));
+
+        $this->assertSame(['a@example.com', 'b@example.com'], array_map(fn($s) => $s->student_email, $data->get_students_for_products([123])));
+        $this->assertSame(['c@example.com'], array_map(fn($s) => $s->student_email, $data->get_students_for_products(['456'])));
+        // Variation and parent product IDs can both be passed.
+        $this->assertCount(3, $data->get_students_for_products([0, 123, 456]));
+        $this->assertSame([], $data->get_students_for_products([999]));
     }
 
     public function testMultiSignupDataWithEmptyStudents() {

@@ -1,14 +1,12 @@
 <?php
 /**
- * Simple tests for Woocommerce_Multi_Signup class
+ * Tests for the Woocommerce_Multi_Signup class
  */
 
 use PHPUnit\Framework\TestCase;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
-use Brain\Monkey\Actions;
-use Brain\Monkey\Filters;
-use Mockery;
+use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 
 class WoocommerceMultiSignupTest extends TestCase {
 
@@ -17,6 +15,7 @@ class WoocommerceMultiSignupTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
         Monkey\setUp();
+        wcms_default_stubs();
 
         // Include the classes we're testing
         require_once __DIR__ . '/../php/woocommerce-multi-signup-data.php';
@@ -31,8 +30,51 @@ class WoocommerceMultiSignupTest extends TestCase {
         parent::tearDown();
     }
 
+    private function studentDataJson() {
+        return json_encode([
+            'students' => [
+                '123' => [
+                    [
+                        'courseName' => 'Math Course',
+                        'firstName' => 'John',
+                        'lastName' => 'Doe',
+                        'email' => 'john.doe@example.com'
+                    ]
+                ]
+            ]
+        ]);
+    }
+
+    private function postRequest(array $extensions, $create_account = null) {
+        $request = new WP_REST_Request();
+        $request->method = 'POST';
+        $request->params = ['create_account' => $create_account, 'extensions' => $extensions];
+
+        return $request;
+    }
+
+    private function mockCheckout($enabled, $required) {
+        $checkout = Mockery::mock('WC_Checkout');
+        $checkout->shouldReceive('is_registration_enabled')->andReturn($enabled);
+        $checkout->shouldReceive('is_registration_required')->andReturn($required);
+
+        $wc = Mockery::mock('WooCommerce');
+        $wc->shouldReceive('checkout')->andReturn($checkout);
+        Functions\when('WC')->justReturn($wc);
+    }
+
     public function testPluginInstantiation() {
         $this->assertInstanceOf(Woocommerce_Multi_Signup::class, $this->plugin);
+        $this->assertInstanceOf(Woocommerce_Multi_Signup_Groups::class, $this->plugin->groups);
+    }
+
+    public function testHooksAreRegistered() {
+        $this->assertNotFalse(has_action('woocommerce_store_api_checkout_update_order_from_request', [$this->plugin, 'orddd_update_block_order_meta_student_data']));
+        $this->assertNotFalse(has_action('admin_notices', [$this->plugin, 'maybe_show_requirements_notice']));
+        $this->assertNotFalse(has_filter('llms_wc_do_default_enrollment', [$this->plugin->groups, 'maybe_skip_default_enrollment']));
+        $this->assertNotFalse(has_action('llms_wc_order_item_fulfill', [$this->plugin->groups, 'fulfill_order_item']));
+        // The old direct enrollment on order completion is gone.
+        $this->assertFalse(has_action('woocommerce_order_status_completed'));
     }
 
     public function testDisplayStudentDataWithoutData() {
@@ -47,21 +89,9 @@ class WoocommerceMultiSignupTest extends TestCase {
     }
 
     public function testDisplayStudentDataWithValidData() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'John',
-                        'lastName' => 'Doe',
-                        'email' => 'john.doe@example.com'
-                    ]
-                ]
-            ]
-        ]);
-
         $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
+        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($this->studentDataJson());
+        $order->shouldReceive('get_items')->andReturn([]);
 
         ob_start();
         $this->plugin->display_student_data_on_admin_order_details($order);
@@ -71,6 +101,26 @@ class WoocommerceMultiSignupTest extends TestCase {
         $this->assertStringContainsString('John Doe', $output);
         $this->assertStringContainsString('john.doe@example.com', $output);
         $this->assertStringContainsString('Math Course', $output);
+        $this->assertStringNotContainsString('Group:', $output);
+    }
+
+    public function testDisplayStudentDataShowsLinkedGroupInAdmin() {
+        $item = createMockOrderItem(123, 1, 55);
+        $item->meta['_llms_group_id'] = 777;
+
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($this->studentDataJson());
+        $order->shouldReceive('get_items')->andReturn([$item]);
+
+        Functions\when('get_llms_group')->justReturn(createMockGroup(777));
+
+        ob_start();
+        $this->plugin->display_student_data_on_admin_order_details($order);
+        $output = ob_get_clean();
+
+        $this->assertStringContainsString('Group:', $output);
+        $this->assertStringContainsString('https://example.com/groups/777', $output);
+        $this->assertStringContainsString('Title 777', $output);
     }
 
     public function testCustomEmailNotification() {
@@ -128,43 +178,130 @@ class WoocommerceMultiSignupTest extends TestCase {
         $this->assertTrue(true); // Test passes if expectations are met
     }
 
-    public function testPrivateGetOrderLink() {
-        Functions\when('network_site_url')->returnArg();
+    public function testOrderMetaUpdateWithMultipleStudents() {
+        $order = Mockery::mock('WC_Order');
+        $multiStudentData = json_encode([
+            'students' => [
+                '123' => [
+                    ['email' => 'student1@example.com', 'firstName' => 'Student', 'lastName' => 'One'],
+                    ['email' => 'student2@example.com', 'firstName' => 'Student', 'lastName' => 'Two']
+                ],
+                '456' => [
+                    ['email' => 'student3@example.com', 'firstName' => 'Student', 'lastName' => 'Three']
+                ]
+            ]
+        ]);
 
-        $reflection = new ReflectionClass($this->plugin);
-        $method = $reflection->getMethod('get_order_link');
-        $method->setAccessible(true);
+        $request = [
+            'extensions' => [
+                'woocommerce-multi-signup' => [
+                    'student_data' => $multiStudentData
+                ]
+            ]
+        ];
 
-        $result = $method->invoke($this->plugin, 123);
+        $order->shouldReceive('update_meta_data')->once()->with('Student Data', $multiStudentData);
+        $order->shouldReceive('save')->once();
 
-        $this->assertStringContainsString('123', $result);
-        $this->assertStringContainsString('wp-admin', $result);
+        $this->plugin->orddd_update_block_order_meta_student_data($order, $request);
+
+        $this->assertTrue(true); // Test passes if expectations are met
     }
 
-    public function testPrivateSendErrorEmail() {
-        Functions\when('get_option')->justReturn('admin@test.com');
-        Functions\when('wp_mail')->justReturn(true);
+    public function testAccountIsNotRequiredWhenNoStudentsAreListed() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(false, false);
 
-        $reflection = new ReflectionClass($this->plugin);
-        $method = $reflection->getMethod('send_error_email');
-        $method->setAccessible(true);
-
-        // Should not throw any exceptions
-        $method->invoke($this->plugin, 'Test error message');
+        $this->plugin->require_account_for_students(json_encode(['students' => []]), $this->postRequest([]));
 
         $this->assertTrue(true);
     }
 
-    public function testStudentEnrollmentWithoutStudentData() {
+    public function testAccountIsNotRequiredForLoggedInBuyer() {
+        Functions\when('is_user_logged_in')->justReturn(true);
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $this->postRequest([]));
+
+        $this->assertTrue(true);
+    }
+
+    public function testAccountIsNotRequiredWhenAccountWillBeCreated() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(true, false);
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $this->postRequest([], true));
+
+        $this->assertTrue(true);
+    }
+
+    public function testAccountIsNotRequiredWhenStoreRequiresRegistration() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(true, true);
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $this->postRequest([], false));
+
+        $this->assertTrue(true);
+    }
+
+    public function testGuestBuyerRegisteringStudentsIsRejected() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(true, false);
+
+        $this->expectException(RouteException::class);
+        $this->expectExceptionMessage('log in or create an account');
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $this->postRequest([], false));
+    }
+
+    public function testGuestBuyerIsRejectedWhenRegistrationIsDisabled() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(false, false);
+
+        $this->expectException(RouteException::class);
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $this->postRequest([], true));
+    }
+
+    public function testAccountCheckOnlyRunsOnFinalCheckoutSubmission() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(false, false);
+
+        $request = $this->postRequest([], false);
+        $request->method = 'PUT';
+
+        $this->plugin->require_account_for_students($this->studentDataJson(), $request);
+
+        $this->assertTrue(true);
+    }
+
+    public function testOrderMetaIsNotSavedWhenGuestIsRejected() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(false, false);
+
         $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn('');
+        $order->shouldNotReceive('update_meta_data');
+        $order->shouldNotReceive('save');
 
-        Functions\when('wc_get_order')->justReturn($order);
+        $request = $this->postRequest(['woocommerce-multi-signup' => ['student_data' => $this->studentDataJson()]], false);
 
-        // Should return early without doing anything
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
+        $this->expectException(RouteException::class);
 
-        $this->assertTrue(true); // Test passes if no exceptions
+        $this->plugin->orddd_update_block_order_meta_student_data($order, $request);
+    }
+
+    public function testOrderMetaIsSavedWhenGuestCreatesAnAccount() {
+        Functions\when('is_user_logged_in')->justReturn(false);
+        $this->mockCheckout(true, false);
+
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('update_meta_data')->once()->with('Student Data', $this->studentDataJson());
+        $order->shouldReceive('save')->once();
+
+        $request = $this->postRequest(['woocommerce-multi-signup' => ['student_data' => $this->studentDataJson()]], true);
+
+        $this->plugin->orddd_update_block_order_meta_student_data($order, $request);
+
+        $this->assertTrue(true);
     }
 
     public function testDisplayMultipleStudentsOnAdminOrderDetails() {
@@ -197,6 +334,7 @@ class WoocommerceMultiSignupTest extends TestCase {
 
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
+        $order->shouldReceive('get_items')->andReturn([]);
 
         ob_start();
         $this->plugin->display_student_data_on_admin_order_details($order);
@@ -235,6 +373,7 @@ class WoocommerceMultiSignupTest extends TestCase {
 
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
+        $order->shouldReceive('get_items')->andReturn([]);
 
         Functions\when('wc_get_order')->justReturn($order);
 
@@ -249,301 +388,47 @@ class WoocommerceMultiSignupTest extends TestCase {
         $this->assertStringContainsString('Charlie Brown', $output);
         $this->assertStringContainsString('charlie.brown@example.com', $output);
         $this->assertStringContainsString('Math Course', $output);
+        $this->assertStringNotContainsString('manage from your account', $output);
     }
 
-    public function testStudentEnrollmentWithMultipleStudents() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'John',
-                        'lastName' => 'Doe',
-                        'email' => 'john.doe@example.com'
-                    ],
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Jane',
-                        'lastName' => 'Smith',
-                        'email' => 'jane.smith@example.com'
-                    ]
-                ]
-            ]
-        ]);
+    public function testThankYouPageLinksToTheGroup() {
+        $item = createMockOrderItem(123, 1, 55);
+        $item->meta['_llms_group_id'] = 777;
 
-        // Mock order and order items
         $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
-        $order->shouldReceive('get_user_id')->andReturn(456);
-        $order->shouldReceive('get_id')->andReturn(123);
+        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($this->studentDataJson());
+        $order->shouldReceive('get_items')->andReturn([$item]);
 
-        $orderItem = Mockery::mock('WC_Order_Item_Product');
-        $orderItem->shouldReceive('get_product_id')->andReturn(123);
-        $orderItem->shouldReceive('get_quantity')->andReturn(2);
+        Functions\when('get_llms_group')->justReturn(createMockGroup(777));
 
-        $order->shouldReceive('get_items')->andReturn([$orderItem]);
+        ob_start();
+        $this->plugin->display_student_data_on_thankyou_page($order);
+        $output = ob_get_clean();
 
-        Functions\when('wc_get_order')->justReturn($order);
-
-        // Mock user functions - simulate existing users
-        Functions\when('get_user_by')->alias(function($field, $value) {
-            if ($value === 'john.doe@example.com') {
-                return createMockUser(789, 'john.doe@example.com', 'john.doe');
-            } elseif ($value === 'jane.smith@example.com') {
-                return createMockUser(790, 'jane.smith@example.com', 'jane.smith');
-            }
-            return false;
-        });
-
-        // Mock LifterLMS functions
-        Functions\when('llms_wc_get_order_item_products')->justReturn([456]);
-        Functions\when('llms_unenroll_student')->justReturn(true);
-        Functions\when('llms_is_user_enrolled')->justReturn(false);
-        Functions\when('llms_enroll_student')->justReturn(true);
-
-        // Execute enrollment
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
-
-        $this->assertTrue(true); // Test passes if no exceptions
+        $this->assertStringContainsString('manage from your account', $output);
+        $this->assertStringContainsString('https://example.com/groups/777', $output);
+        $this->assertStringContainsString('Title 777', $output);
     }
 
-    public function testStudentEnrollmentWithMixedExistingAndNewUsers() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Existing',
-                        'lastName' => 'User',
-                        'email' => 'existing@example.com'
-                    ],
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'New',
-                        'lastName' => 'User',
-                        'email' => 'new@example.com'
-                    ]
-                ]
-            ]
-        ]);
+    public function testRequirementsNoticeWhenGroupsIsMissing() {
+        ob_start();
+        $this->plugin->maybe_show_requirements_notice();
+        $output = ob_get_clean();
 
-        // Mock order
-        $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
-        $order->shouldReceive('get_user_id')->andReturn(456);
-        $order->shouldReceive('get_id')->andReturn(123);
-
-        $orderItem = Mockery::mock('WC_Order_Item_Product');
-        $orderItem->shouldReceive('get_product_id')->andReturn(123);
-        $orderItem->shouldReceive('get_quantity')->andReturn(2);
-        $order->shouldReceive('get_items')->andReturn([$orderItem]);
-
-        Functions\when('wc_get_order')->justReturn($order);
-
-        // Mock user functions - one exists, one doesn't
-        Functions\when('get_user_by')->alias(function($field, $value) {
-            if ($value === 'existing@example.com') {
-                return createMockUser(789, 'existing@example.com', 'existing');
-            }
-            return false; // new@example.com doesn't exist
-        });
-
-        Functions\when('wp_create_user')->justReturn(791);
-        Functions\when('wp_update_user')->justReturn(true);
-        Functions\when('wp_send_new_user_notifications')->justReturn(true);
-        Functions\when('remove_all_filters')->justReturn(true);
-        Functions\when('wp_generate_password')->justReturn('random_password_123');
-
-        // Mock get_user_by for the newly created user
-        Functions\when('get_user_by')->alias(function($field, $value) {
-            if ($value === 'existing@example.com') {
-                return createMockUser(789, 'existing@example.com', 'existing');
-            } elseif ($field === 'id' && $value === 791) {
-                return createMockUser(791, 'new@example.com', 'new');
-            }
-            return false;
-        });
-
-        // Mock LifterLMS functions
-        Functions\when('llms_wc_get_order_item_products')->justReturn([456]);
-        Functions\when('llms_unenroll_student')->justReturn(true);
-        Functions\when('llms_is_user_enrolled')->justReturn(false);
-        Functions\when('llms_enroll_student')->justReturn(true);
-
-        // Execute enrollment
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
-
-        $this->assertTrue(true); // Test passes if no exceptions
+        // The LifterLMS Groups functions are stubbed in this suite, so only the WooCommerce
+        // integration (whose class is never defined here) shows up as missing.
+        $this->assertStringContainsString('notice-warning', $output);
+        $this->assertStringContainsString('LifterLMS WooCommerce is not active.', $output);
+        $this->assertStringContainsString('will not be enrolled', $output);
     }
 
-    public function testStudentEnrollmentWithInsufficientQuantity() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Student',
-                        'lastName' => 'One',
-                        'email' => 'student1@example.com'
-                    ],
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Student',
-                        'lastName' => 'Two',
-                        'email' => 'student2@example.com'
-                    ],
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Student',
-                        'lastName' => 'Three',
-                        'email' => 'student3@example.com'
-                    ]
-                ]
-            ]
-        ]);
+    public function testRequirementsNoticeIsHiddenFromNonAdmins() {
+        Functions\when('current_user_can')->justReturn(false);
 
-        // Mock order with insufficient quantity (only 2 but 3 students)
-        $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
-        $order->shouldReceive('get_user_id')->andReturn(456);
-        $order->shouldReceive('get_id')->andReturn(123);
+        ob_start();
+        $this->plugin->maybe_show_requirements_notice();
+        $output = ob_get_clean();
 
-        $orderItem = Mockery::mock('WC_Order_Item_Product');
-        $orderItem->shouldReceive('get_product_id')->andReturn(123);
-        $orderItem->shouldReceive('get_quantity')->andReturn(2); // Only 2 quantity for 3 students
-        $order->shouldReceive('get_items')->andReturn([$orderItem]);
-
-        Functions\when('wc_get_order')->justReturn($order);
-        Functions\when('wp_mail')->justReturn(true); // Mock error email
-        Functions\when('llms_unenroll_student')->justReturn(true);
-        Functions\when('remove_all_filters')->justReturn(true);
-        Functions\when('wp_generate_password')->justReturn('random_password_123');
-        Functions\when('wp_create_user')->justReturn(793);
-        Functions\when('wp_update_user')->justReturn(true);
-        Functions\when('wp_send_new_user_notifications')->justReturn(true);
-        Functions\when('network_site_url')->returnArg();
-        Functions\when('get_option')->justReturn('admin@test.com');
-
-        // Mock get_user_by for newly created users
-        Functions\when('get_user_by')->alias(function($field, $value) {
-            if ($field === 'id' && $value === 793) {
-                return createMockUser(793, 'created@example.com', 'created');
-            }
-            return false; // All email lookups return false (new users)
-        });
-
-        // Mock LifterLMS functions
-        Functions\when('llms_wc_get_order_item_products')->justReturn([456]);
-        Functions\when('llms_is_user_enrolled')->justReturn(false);
-        Functions\when('llms_enroll_student')->justReturn(true);
-
-        // Should handle the insufficient quantity gracefully
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
-
-        $this->assertTrue(true); // Test passes if no exceptions
-    }
-
-    public function testStudentEnrollmentWithMultipleCoursesAndStudents() {
-        $studentData = json_encode([
-            'students' => [
-                '123' => [ // Math course
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Math',
-                        'lastName' => 'Student1',
-                        'email' => 'math1@example.com'
-                    ],
-                    [
-                        'courseName' => 'Math Course',
-                        'firstName' => 'Math',
-                        'lastName' => 'Student2',
-                        'email' => 'math2@example.com'
-                    ]
-                ],
-                '456' => [ // Science course
-                    [
-                        'courseName' => 'Science Course',
-                        'firstName' => 'Science',
-                        'lastName' => 'Student1',
-                        'email' => 'science1@example.com'
-                    ]
-                ]
-            ]
-        ]);
-
-        // Mock order with multiple products
-        $order = Mockery::mock('WC_Order');
-        $order->shouldReceive('get_meta')->with('Student Data', true)->andReturn($studentData);
-        $order->shouldReceive('get_user_id')->andReturn(456);
-        $order->shouldReceive('get_id')->andReturn(123);
-
-        $mathItem = Mockery::mock('WC_Order_Item_Product');
-        $mathItem->shouldReceive('get_product_id')->andReturn(123);
-        $mathItem->shouldReceive('get_quantity')->andReturn(2);
-
-        $scienceItem = Mockery::mock('WC_Order_Item_Product');
-        $scienceItem->shouldReceive('get_product_id')->andReturn(456);
-        $scienceItem->shouldReceive('get_quantity')->andReturn(1);
-
-        $order->shouldReceive('get_items')->andReturn([$mathItem, $scienceItem]);
-
-        Functions\when('wc_get_order')->justReturn($order);
-
-        // Mock all users as new
-        Functions\when('get_user_by')->justReturn(false);
-        Functions\when('wp_create_user')->justReturn(792);
-        Functions\when('wp_update_user')->justReturn(true);
-        Functions\when('wp_send_new_user_notifications')->justReturn(true);
-        Functions\when('remove_all_filters')->justReturn(true);
-        Functions\when('wp_generate_password')->justReturn('random_password_123');
-
-        // Mock get_user_by for newly created users
-        Functions\when('get_user_by')->alias(function($field, $value) {
-            if ($field === 'id' && $value === 792) {
-                return createMockUser(792, 'created@example.com', 'created');
-            }
-            return false; // All email lookups return false (new users)
-        });
-
-        // Mock LifterLMS functions
-        Functions\when('llms_wc_get_order_item_products')->justReturn([789]); // Mock course ID
-        Functions\when('llms_unenroll_student')->justReturn(true);
-        Functions\when('llms_is_user_enrolled')->justReturn(false);
-        Functions\when('llms_enroll_student')->justReturn(true);
-
-        // Execute enrollment
-        $this->plugin->student_enroll_on_woocommerce_payment_complete(123);
-
-        $this->assertTrue(true); // Test passes if no exceptions
-    }
-
-    public function testOrderMetaUpdateWithMultipleStudents() {
-        $order = Mockery::mock('WC_Order');
-        $multiStudentData = json_encode([
-            'students' => [
-                '123' => [
-                    ['email' => 'student1@example.com', 'firstName' => 'Student', 'lastName' => 'One'],
-                    ['email' => 'student2@example.com', 'firstName' => 'Student', 'lastName' => 'Two']
-                ],
-                '456' => [
-                    ['email' => 'student3@example.com', 'firstName' => 'Student', 'lastName' => 'Three']
-                ]
-            ]
-        ]);
-
-        $request = [
-            'extensions' => [
-                'woocommerce-multi-signup' => [
-                    'student_data' => $multiStudentData
-                ]
-            ]
-        ];
-
-        $order->shouldReceive('update_meta_data')->once()->with('Student Data', $multiStudentData);
-        $order->shouldReceive('save')->once();
-
-        $this->plugin->orddd_update_block_order_meta_student_data($order, $request);
-
-        $this->assertTrue(true); // Test passes if expectations are met
+        $this->assertEmpty($output);
     }
 }

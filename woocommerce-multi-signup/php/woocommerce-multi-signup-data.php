@@ -22,11 +22,21 @@ class Woocommerce_Multi_Signup_Data
 
 	public function __construct(string $data) {
 		$parsedData = json_decode($data, true);
+		$students = is_array($parsedData) && isset($parsedData['students']) && is_array($parsedData['students'])
+			? $parsedData['students']
+			: [];
+
 		$student_data = [];
-		foreach ($parsedData['students'] as $product_id => $course_student) {
+		foreach ($students as $product_id => $course_student) {
+			if (!is_array($course_student)) {
+				continue;
+			}
 			foreach ($course_student as $student) {
+				if (!is_array($student)) {
+					continue;
+				}
 				$student_data[] = new Woocommerce_Multi_Signup_Data_Student(
-					$product_id,
+					(string) $product_id,
 					$student['courseName'] ?? 'test',
 					$student['firstName'] ?? '',
 					$student['lastName'] ?? '',
@@ -36,5 +46,20 @@ class Woocommerce_Multi_Signup_Data
 		}
 
 		$this->student_data = $student_data;
+	}
+
+	/**
+	 * Students registered for any of the given WooCommerce product (or variation) IDs.
+	 *
+	 * @param array $product_ids Product and/or variation IDs.
+	 * @return Woocommerce_Multi_Signup_Data_Student[]
+	 */
+	public function get_students_for_products(array $product_ids): array {
+		$ids = array_map('strval', $product_ids);
+
+		return array_values(array_filter(
+			$this->student_data,
+			fn($student) => in_array((string) $student->course_product_id, $ids, true)
+		));
 	}
 }

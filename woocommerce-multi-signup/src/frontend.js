@@ -18,6 +18,16 @@ const Block = ({ children, checkoutExtensionData }) => {
         return store.getCartData().items;
     });
 
+    // 0 for guests. The buyer's account owns the group the students are added to.
+    const customerId = useSelect((select) => {
+        try {
+            const checkout = select('wc/store/checkout');
+            return checkout && checkout.getCustomerId ? checkout.getCustomerId() : null;
+        } catch (e) {
+            return null;
+        }
+    });
+
     const onInputChange = useCallback(
         (value, item, number, field) => {
             if (!studentData.students[item.id]) {
@@ -117,8 +127,17 @@ const Block = ({ children, checkoutExtensionData }) => {
                         class={"wc-block-components-checkout-step__description"}
                         style={{ marginTop: "1em" }}
                     >
-                        This infomation will be used to register the students. Information to set up their account will be sent to the provided email.
+                        This information will be used to register the students. Each student will receive an email to set up their account.
+                        The students are added to a group for the course that you manage from your account, so you can add or remove students later.
                     </p>
+                    {customerId === 0 && (
+                        <p
+                            class={"wc-block-components-checkout-step__description"}
+                            style={{ marginTop: "0.5em" }}
+                        >
+                            Please log in or create an account during checkout: your account is used to manage the students' group.
+                        </p>
+                    )}
                     {cartItems.map((item) => getFormatFromItem(item))}
                 </>
             )}

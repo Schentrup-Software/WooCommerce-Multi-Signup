@@ -330,6 +330,7 @@ ASALocalRun/
 .mfractor/
 
 plugins/
+Theme/
 
 # Logs
 logs

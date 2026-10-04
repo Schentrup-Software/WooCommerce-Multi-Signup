@@ -5,10 +5,10 @@
 
 use Brain\Monkey;
 use Brain\Monkey\Functions;
-use Mockery;
 
 // Load Composer autoloader
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/stubs.php';
 
 // Initialize Brain Monkey
 Monkey\setUp();
@@ -30,30 +30,59 @@ if (!defined('WP_PLUGIN_DIR')) {
     define('WP_PLUGIN_DIR', WP_CONTENT_DIR . '/plugins');
 }
 
-// Mock WordPress functions that are commonly used
-Functions\when('__')->returnArg();
-Functions\when('esc_html')->returnArg();
-Functions\when('esc_attr')->returnArg();
-Functions\when('wp_kses_post')->returnArg();
-Functions\when('sanitize_text_field')->returnArg();
-Functions\when('get_option')->justReturn('test@example.com');
-Functions\when('network_site_url')->returnArg();
-Functions\when('wp_generate_password')->justReturn('random_password_123');
-Functions\when('wp_mail')->justReturn(true);
-Functions\when('get_password_reset_key')->justReturn('test_key_123');
-Functions\when('wp_create_user')->justReturn(123);
-Functions\when('wp_update_user')->justReturn(true);
-Functions\when('wp_send_new_user_notifications')->justReturn(true);
-Functions\when('remove_all_filters')->justReturn(true);
-Functions\when('get_user_by')->justReturn(false);
-Functions\when('wc_get_order')->justReturn(null);
-Functions\when('llms_wc_get_order_item_products')->justReturn([]);
-Functions\when('llms_unenroll_student')->justReturn(true);
-Functions\when('llms_is_user_enrolled')->justReturn(false);
-Functions\when('llms_enroll_student')->justReturn(true);
+/**
+ * Default stubs for the WordPress / WooCommerce / LifterLMS functions the plugin calls.
+ *
+ * Brain Monkey resets function redefinitions on tearDown, so tests call this from setUp()
+ * and override individual functions as needed.
+ */
+function wcms_default_stubs() {
+    Functions\when('__')->returnArg();
+    Functions\when('esc_html')->returnArg();
+    Functions\when('esc_attr')->returnArg();
+    Functions\when('esc_url')->returnArg();
+    Functions\when('wp_kses_post')->returnArg();
+    Functions\when('sanitize_text_field')->returnArg();
+    Functions\when('absint')->alias(function ($value) {
+        return abs((int) $value);
+    });
+    Functions\when('get_option')->justReturn('test@example.com');
+    Functions\when('network_site_url')->returnArg();
+    Functions\when('wp_generate_password')->justReturn('random_password_123');
+    Functions\when('wp_mail')->justReturn(true);
+    Functions\when('get_password_reset_key')->justReturn('test_key_123');
+    Functions\when('wp_create_user')->justReturn(123);
+    Functions\when('wp_update_user')->justReturn(true);
+    Functions\when('wp_send_new_user_notifications')->justReturn(true);
+    Functions\when('remove_all_filters')->justReturn(true);
+    Functions\when('get_user_by')->justReturn(false);
+    Functions\when('wc_get_order')->justReturn(null);
+    Functions\when('get_the_title')->alias(function ($id) {
+        return 'Title ' . $id;
+    });
+    Functions\when('get_permalink')->alias(function ($id) {
+        return 'https://example.com/groups/' . $id;
+    });
+    Functions\when('is_user_logged_in')->justReturn(true);
+    Functions\when('current_user_can')->justReturn(true);
+
+    // LifterLMS core + Groups.
+    Functions\when('llms_is_user_enrolled')->justReturn(false);
+    Functions\when('llms_enroll_student')->justReturn(true);
+    Functions\when('get_llms_group')->justReturn(null);
+    Functions\when('llms_create_group')->justReturn(null);
+    Functions\when('llms_groups_get_group_from_purchase_source')->justReturn(false);
+    Functions\when('llms_groups_get_user_groups_for_product')->justReturn([]);
+    Functions\when('llms_groups_lock_seats')->justReturn(false);
+    Functions\when('llms_groups_release_seats_lock')->justReturn(null);
+
+    LLMS_Groups_Enrollment::reset();
+}
+
+wcms_default_stubs();
 
 // Common test helper functions
-function createMockOrder($order_id = 123, $user_id = 456, $meta_data = []) {
+function createMockOrder($order_id = 123, $user_id = 456, $meta_data = [], $items = []) {
     $order = Mockery::mock('WC_Order');
     $order->shouldReceive('get_id')->andReturn($order_id);
     $order->shouldReceive('get_user_id')->andReturn($user_id);
@@ -62,16 +91,66 @@ function createMockOrder($order_id = 123, $user_id = 456, $meta_data = []) {
     });
     $order->shouldReceive('update_meta_data')->andReturnSelf();
     $order->shouldReceive('save')->andReturnSelf();
+    $order->notes = [];
+    $order->shouldReceive('add_order_note')->andReturnUsing(function($note) use ($order) {
+        $order->notes[] = $note;
+        return count($order->notes);
+    });
+    $order->shouldReceive('get_formatted_billing_full_name')->andReturn('Pat Buyer');
+    $order->shouldReceive('get_items')->andReturn($items);
 
     return $order;
 }
 
-function createMockOrderItem($product_id = 789, $quantity = 1) {
+function createMockOrderItem($product_id = 789, $quantity = 1, $item_id = 55, $variation_id = 0) {
     $item = Mockery::mock('WC_Order_Item_Product');
+    $item->meta = [];
+    $item->shouldReceive('get_id')->andReturn($item_id);
     $item->shouldReceive('get_product_id')->andReturn($product_id);
+    $item->shouldReceive('get_variation_id')->andReturn($variation_id);
     $item->shouldReceive('get_quantity')->andReturn($quantity);
+    $item->shouldReceive('get_meta')->andReturnUsing(function($key, $single = true) use ($item) {
+        return $item->meta[$key] ?? '';
+    });
+    $item->shouldReceive('update_meta_data')->andReturnUsing(function($key, $value) use ($item) {
+        $item->meta[$key] = $value;
+        return $item;
+    });
+    $item->shouldReceive('save_meta_data')->andReturn(null);
 
     return $item;
+}
+
+function createMockPlan($plan_id = 900, $product_id = 456, $group_enrolment = 'no') {
+    $plan = Mockery::mock('LLMS_Access_Plan');
+    $plan->shouldReceive('get')->andReturnUsing(function($key) use ($plan_id, $product_id, $group_enrolment) {
+        $props = [
+            'id' => $plan_id,
+            'product_id' => $product_id,
+            'group_enrolment' => $group_enrolment,
+        ];
+        return $props[$key] ?? '';
+    });
+
+    return $plan;
+}
+
+/**
+ * A fake LLMS_Group that records set() calls and reports seat usage.
+ */
+function createMockGroup($group_id = 777, $title = 'Test Group', $seats = ['total' => 3, 'used' => 1, 'open' => 2]) {
+    $group = Mockery::mock('LLMS_Group');
+    $group->props = ['id' => $group_id, 'title' => $title];
+    $group->shouldReceive('get')->andReturnUsing(function($key) use ($group) {
+        return $group->props[$key] ?? '';
+    });
+    $group->shouldReceive('set')->andReturnUsing(function($key, $value) use ($group) {
+        $group->props[$key] = $value;
+        return true;
+    });
+    $group->shouldReceive('get_seats')->andReturn($seats);
+
+    return $group;
 }
 
 function createMockUser($id = 123, $email = 'test@example.com', $login = 'testuser') {
@@ -79,6 +158,7 @@ function createMockUser($id = 123, $email = 'test@example.com', $login = 'testus
     $user->ID = $id;
     $user->user_login = $login;
     $user->user_email = $email;
+    $user->display_name = $login;
     $user->first_name = '';
     $user->last_name = '';
 
