@@ -38,7 +38,9 @@ if (!defined('WP_PLUGIN_DIR')) {
  */
 function wcms_default_stubs() {
     Functions\when('__')->returnArg();
-    Functions\when('esc_html')->returnArg();
+    Functions\when('esc_html')->alias(function ($value) {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    });
     Functions\when('esc_attr')->returnArg();
     Functions\when('esc_url')->returnArg();
     Functions\when('wp_kses_post')->returnArg();
@@ -65,6 +67,29 @@ function wcms_default_stubs() {
     });
     Functions\when('is_user_logged_in')->justReturn(true);
     Functions\when('current_user_can')->justReturn(true);
+    Functions\when('get_current_user_id')->justReturn(456);
+    Functions\when('esc_html__')->returnArg();
+    Functions\when('trailingslashit')->alias(function ($value) {
+        return rtrim($value, '/') . '/';
+    });
+    Functions\when('user_trailingslashit')->alias(function ($value) {
+        return rtrim($value, '/') . '/';
+    });
+    Functions\when('llms_get_page_url')->justReturn('https://example.com/dashboard/');
+    Functions\when('llms_get_endpoint_url')->alias(function ($endpoint, $value = '', $permalink = '') {
+        return $permalink . $endpoint . '/';
+    });
+    Functions\when('llms_get_student')->justReturn(null);
+    Functions\when('wc_get_account_endpoint_url')->alias(function ($endpoint) {
+        return 'https://example.com/my-account/' . $endpoint . '/';
+    });
+    Functions\when('is_llms_account_page')->justReturn(false);
+    Functions\when('llms_get_page_id')->justReturn(10);
+    Functions\when('wc_get_page_id')->justReturn(20);
+    Functions\when('wp_safe_redirect')->justReturn(true);
+    Functions\when('llms_groups_get_role_name')->alias(function ($role) {
+        return 'admin' === $role ? 'Group Administrator' : ucfirst($role);
+    });
 
     // LifterLMS core + Groups.
     Functions\when('llms_is_user_enrolled')->justReturn(false);
@@ -77,6 +102,7 @@ function wcms_default_stubs() {
     Functions\when('llms_groups_release_seats_lock')->justReturn(null);
 
     LLMS_Groups_Enrollment::reset();
+    LLMS_Student_Dashboard::$enabled = ['view-groups'];
 }
 
 wcms_default_stubs();

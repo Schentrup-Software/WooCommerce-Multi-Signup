@@ -16,6 +16,8 @@ This plugin allows customers sign up multiple students or a different student fo
 * On the `llms_wc_order_item_fulfill` action the plugin creates a LifterLMS Group for the purchased course, makes the buyer its primary administrator and adds every listed student as a member. Group membership enrolls the students in the course, and the buyer can add, remove or move students from the group's page (also listed under "My Groups" in their account).
 * A buyer only ever gets one group per course: when they already own a group for the course (from an earlier order, or an earlier item in the same order) the purchased seats and the new students are added to that group instead of creating another one.
 * If the access plan is already a LifterLMS Groups "group enrolment" plan, the group that LifterLMS Groups creates for the order is reused and the students are added to it.
+* The LifterLMS student dashboard home gets a "Groups I Manage" section (right under My Courses) listing every group the user administers or leads, with the course, role, seat usage and a "Manage students" link to the group's Members tab. Users who manage no groups don't see it. The "My Groups" tab that LifterLMS Groups adds to the dashboard sidebar still lists all groups the user belongs to.
+* The dashboard's "Order History" tab links to WooCommerce's order list (My Account, Orders) instead of the always-empty LifterLMS order history, and the old LifterLMS orders endpoint redirects there.
 * Students that do not have an account yet get one, plus an email with a link to set their password.
 * Because the buyer's account owns the group, checkout asks guests to log in or create an account when they register other students.
 

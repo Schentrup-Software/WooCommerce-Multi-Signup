@@ -18,6 +18,7 @@
 require_once __DIR__ . '/php/woocommerce-multi-signup-init.php';
 require_once __DIR__ . '/php/woocommerce-multi-signup-data.php';
 require_once __DIR__ . '/php/woocommerce-multi-signup-groups.php';
+require_once __DIR__ . '/php/woocommerce-multi-signup-dashboard.php';
 
 // Declare compatibility with WooCommerce features (HPOS and Cart/Checkout Blocks).
 add_action(
@@ -50,6 +51,11 @@ class Woocommerce_Multi_Signup {
 	 */
 	public $groups;
 
+	/**
+	 * @var Woocommerce_Multi_Signup_Dashboard
+	 */
+	public $dashboard;
+
     public function __construct() {
         add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'orddd_update_block_order_meta_student_data' ), 10, 2 );
         add_action( 'woocommerce_admin_order_data_after_order_details', array( $this, 'display_student_data_on_admin_order_details' ) );
@@ -57,7 +63,8 @@ class Woocommerce_Multi_Signup {
 		add_filter( 'wp_new_user_notification_email', array( $this, 'custom_wp_new_user_notification_email'), 10, 3 );
 		add_action( 'admin_notices', array( $this, 'maybe_show_requirements_notice' ) );
 
-		$this->groups = new Woocommerce_Multi_Signup_Groups();
+		$this->groups    = new Woocommerce_Multi_Signup_Groups();
+		$this->dashboard = new Woocommerce_Multi_Signup_Dashboard();
     }
 
 	public function custom_wp_new_user_notification_email( $wp_new_user_notification_email, $user, $blogname ) {

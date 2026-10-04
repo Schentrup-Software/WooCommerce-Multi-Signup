@@ -66,6 +66,7 @@ class WoocommerceMultiSignupTest extends TestCase {
     public function testPluginInstantiation() {
         $this->assertInstanceOf(Woocommerce_Multi_Signup::class, $this->plugin);
         $this->assertInstanceOf(Woocommerce_Multi_Signup_Groups::class, $this->plugin->groups);
+        $this->assertInstanceOf(Woocommerce_Multi_Signup_Dashboard::class, $this->plugin->dashboard);
     }
 
     public function testHooksAreRegistered() {
@@ -73,6 +74,8 @@ class WoocommerceMultiSignupTest extends TestCase {
         $this->assertNotFalse(has_action('admin_notices', [$this->plugin, 'maybe_show_requirements_notice']));
         $this->assertNotFalse(has_filter('llms_wc_do_default_enrollment', [$this->plugin->groups, 'maybe_skip_default_enrollment']));
         $this->assertNotFalse(has_action('llms_wc_order_item_fulfill', [$this->plugin->groups, 'fulfill_order_item']));
+        $this->assertNotFalse(has_action('lifterlms_student_dashboard_index', [$this->plugin->dashboard, 'output_managed_groups_section']));
+        $this->assertNotFalse(has_filter('llms_get_student_dashboard_tabs', [$this->plugin->dashboard, 'link_order_history_to_woocommerce']));
         // The old direct enrollment on order completion is gone.
         $this->assertFalse(has_action('woocommerce_order_status_completed'));
     }

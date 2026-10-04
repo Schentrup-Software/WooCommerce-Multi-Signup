@@ -83,11 +83,38 @@ namespace {
             public static function reset() {
                 self::$calls = [];
                 self::$return = true;
+                self::$roles = [];
             }
+
+            /** @var array<int,array<int,string>> user ID => group ID => role, for get_role(). */
+            public static $roles = [];
 
             public static function add($user_id, $group_id, $trigger = 'unspecified', $role = 'member') {
                 self::$calls[] = compact('user_id', 'group_id', 'trigger', 'role');
                 return self::$return;
+            }
+
+            public static function get_role($user_id, $group_id) {
+                return self::$roles[$user_id][$group_id] ?? '';
+            }
+        }
+    }
+
+    if (!class_exists('LLMS_Groups_Profile')) {
+        class LLMS_Groups_Profile {
+            public static function get_tab_slug($tab) {
+                return $tab;
+            }
+        }
+    }
+
+    if (!class_exists('LLMS_Student_Dashboard')) {
+        class LLMS_Student_Dashboard {
+            /** @var string[] Endpoints reported as enabled. */
+            public static $enabled = ['view-groups'];
+
+            public static function is_endpoint_enabled($endpoint) {
+                return in_array($endpoint, self::$enabled, true);
             }
         }
     }
