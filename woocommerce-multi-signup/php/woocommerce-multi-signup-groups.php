@@ -9,6 +9,9 @@
  * Group membership cascades into course enrollment, so the buyer can later add,
  * remove and move students from the group's profile page.
  *
+ * The buyer manages the group without being a member of it: they hold no seat and
+ * get no course access unless they list themselves as one of the students.
+ *
  * Relies on the hooks added in LifterLMS WooCommerce 3.1.0:
  *  - `llms_wc_do_default_enrollment` (filter) to skip the buyer's enrollment.
  *  - `llms_wc_order_item_fulfill` (action) to fulfill each order item / access plan.
@@ -40,6 +43,35 @@ class Woocommerce_Multi_Signup_Groups {
 	public function __construct() {
 		add_filter( 'llms_wc_do_default_enrollment', array( $this, 'maybe_skip_default_enrollment' ), self::HOOK_PRIORITY, 4 );
 		add_action( 'llms_wc_order_item_fulfill', array( $this, 'fulfill_order_item' ), self::HOOK_PRIORITY, 4 );
+		add_filter( 'llms_groups_profile_serve_404', array( $this, 'allow_managers_to_view_group' ), 10, 2 );
+	}
+
+	/**
+	 * Let a group's administrators and leaders open its page even when they are not members.
+	 *
+	 * LifterLMS Groups hides "closed" groups from logged-in users who are not enrolled in
+	 * them, which would lock a buyer out of the group they manage.
+	 *
+	 * @param bool       $serve_404 Whether Groups intends to serve a 404.
+	 * @param LLMS_Group $group     Group being viewed.
+	 * @return bool
+	 */
+	public function allow_managers_to_view_group( $serve_404, $group ) {
+		if ( ! $serve_404 || ! $group || ! class_exists( 'LLMS_Groups_Enrollment' ) ) {
+			return $serve_404;
+		}
+
+		$user_id  = get_current_user_id();
+		$group_id = absint( $group->get( 'id' ) );
+		if ( ! $user_id || ! $group_id ) {
+			return $serve_404;
+		}
+
+		if ( function_exists( 'llms_group_is_user_primary_admin' ) && llms_group_is_user_primary_admin( $user_id, $group_id ) ) {
+			return false;
+		}
+
+		return ! in_array( LLMS_Groups_Enrollment::get_role( $user_id, $group_id ), array( 'admin', 'leader' ), true );
 	}
 
 	/**
@@ -98,11 +130,8 @@ class Woocommerce_Multi_Signup_Groups {
 			$students = array_slice( $students, 0, $quantity );
 		}
 
-		$course_id        = absint( $plan->get( 'product_id' ) );
-		$buyer_is_student = $this->is_buyer_listed( $buyer_id, $students );
-
 		$reused = false;
-		$group  = $this->get_or_create_group( $order, $item, $plan, $quantity, $buyer_id, $buyer_is_student, $reused );
+		$group  = $this->get_or_create_group( $order, $item, $plan, $quantity, $buyer_id, $reused );
 		if ( ! $group ) {
 			$this->send_error_email( "Could not create a group for order $order_link. The listed students were not enrolled." );
 			return;
@@ -118,7 +147,7 @@ class Woocommerce_Multi_Signup_Groups {
 				continue;
 			}
 
-			if ( true === $this->add_student_to_group( $user, $group, $course_id, $order_id, $buyer_id ) ) {
+			if ( true === $this->add_student_to_group( $user, $group, $order_id, $buyer_id ) ) {
 				$added++;
 			}
 		}
@@ -194,7 +223,7 @@ class Woocommerce_Multi_Signup_Groups {
 	 * @return bool
 	 */
 	protected function is_groups_available() {
-		return function_exists( 'llms_create_group' )
+		return class_exists( 'LLMS_Group' )
 			&& function_exists( 'get_llms_group' )
 			&& class_exists( 'LLMS_Groups_Enrollment' )
 			&& function_exists( 'llms_enroll_student' )
@@ -204,16 +233,15 @@ class Woocommerce_Multi_Signup_Groups {
 	/**
 	 * Find the group for this order item and access plan, creating it when needed.
 	 *
-	 * @param WC_Order         $order            WooCommerce order.
-	 * @param WC_Order_Item    $item             Order line item.
-	 * @param LLMS_Access_Plan $plan             Access plan linked to the order item.
-	 * @param int              $quantity         Line item quantity.
-	 * @param int              $buyer_id         WP_User ID of the buyer.
-	 * @param bool             $buyer_is_student Whether the buyer listed themselves as a student.
-	 * @param bool             $reused           Set to `true` when an existing group was reused rather than created.
+	 * @param WC_Order         $order    WooCommerce order.
+	 * @param WC_Order_Item    $item     Order line item.
+	 * @param LLMS_Access_Plan $plan     Access plan linked to the order item.
+	 * @param int              $quantity Line item quantity (the number of seats purchased).
+	 * @param int              $buyer_id WP_User ID of the buyer.
+	 * @param bool             $reused   Set to `true` when an existing group was reused rather than created.
 	 * @return LLMS_Group|null
 	 */
-	protected function get_or_create_group( $order, $item, $plan, $quantity, $buyer_id, $buyer_is_student, &$reused = false ) {
+	protected function get_or_create_group( $order, $item, $plan, $quantity, $buyer_id, &$reused = false ) {
 		$plan_id = absint( $plan->get( 'id' ) );
 		$reused  = false;
 
@@ -239,34 +267,70 @@ class Woocommerce_Multi_Signup_Groups {
 		// The buyer already owns a group for this course: add the purchased seats to it.
 		$group = $this->get_existing_buyer_group( $buyer_id, $course_id );
 		if ( $group ) {
-			// The buyer already occupies a seat as the group's administrator.
-			$this->add_seats( $group, $quantity - ( $buyer_is_student ? 1 : 0 ) );
+			$this->add_seats( $group, $quantity );
 			$reused = true;
 			return $group;
 		}
 
-		$group = llms_create_group(
+		$group = $this->create_group_post(
 			array(
+				'post_status' => 'publish',
 				'post_author' => $buyer_id,
 				'post_title'  => $this->get_group_title( $course_id, $buyer_id, $order ),
+				'meta_input'  => array(
+					'_llms_visibility' => $this->get_default_visibility(),
+				),
 			)
 		);
 		if ( ! $group || ! $group->get( 'id' ) ) {
 			return null;
 		}
 
-		/*
-		 * Set the course after creation on purpose: llms_create_group() enrolls the author
-		 * into the group first, and only members added once post_id is set cascade into the
-		 * course. The buyer therefore manages the group without being enrolled themselves.
-		 */
 		$group->set( 'post_id', $course_id );
-		// The buyer occupies a seat as the group's administrator.
-		$group->set( 'seats', $quantity + ( $buyer_is_student ? 0 : 1 ) );
+		// Seats are exactly what was purchased; the buyer manages the group without holding one.
+		$group->set( 'seats', $quantity );
 		$group->set( 'wc_order_id', absint( $order->get_id() ) );
 		$group->set( 'wc_order_item_id', absint( $item->get_id() ) );
 
+		/*
+		 * Make the buyer the primary administrator without enrolling them in the group.
+		 * LifterLMS Groups grants management capabilities from this role meta, while
+		 * membership (and the course access that comes with it) is only given to students.
+		 */
+		LLMS_Groups_Enrollment::update_role( $buyer_id, $group->get( 'id' ), 'primary_admin' );
+
 		return $group;
+	}
+
+	/**
+	 * Create the group post.
+	 *
+	 * Deliberately bypasses the Groups add-on's group creation helper, which would
+	 * enroll the author as a member.
+	 *
+	 * @param array $args Arguments for wp_insert_post().
+	 * @return LLMS_Group|null
+	 */
+	protected function create_group_post( $args ) {
+		$group = new LLMS_Group( 'new', $args );
+
+		return $group->get( 'id' ) ? $group : null;
+	}
+
+	/**
+	 * Site-wide default group visibility from the LifterLMS Groups settings.
+	 *
+	 * @return string
+	 */
+	protected function get_default_visibility() {
+		if ( function_exists( 'llms_groups' ) && is_callable( array( llms_groups(), 'get_integration' ) ) ) {
+			$visibility = llms_groups()->get_integration()->get_option( 'visibility' );
+			if ( $visibility ) {
+				return (string) $visibility;
+			}
+		}
+
+		return 'closed';
 	}
 
 	/**
@@ -366,35 +430,25 @@ class Woocommerce_Multi_Signup_Groups {
 	/**
 	 * Add a student to the group (and therefore to the course).
 	 *
-	 * @param WP_User    $user      Student.
-	 * @param LLMS_Group $group     Group.
-	 * @param int        $course_id Course or membership the group grants access to.
-	 * @param int        $order_id  WooCommerce order ID.
-	 * @param int        $buyer_id  WP_User ID of the buyer.
+	 * @param WP_User    $user     Student.
+	 * @param LLMS_Group $group    Group.
+	 * @param int        $order_id WooCommerce order ID.
+	 * @param int        $buyer_id WP_User ID of the buyer.
 	 * @return bool|null `true` when added, `null` when already a member, `false` on failure (an error email is sent).
 	 */
-	protected function add_student_to_group( $user, $group, $course_id, $order_id, $buyer_id ) {
+	protected function add_student_to_group( $user, $group, $order_id, $buyer_id ) {
 		$group_id   = absint( $group->get( 'id' ) );
 		$user_id    = absint( $user->ID );
 		$order_link = $this->get_order_link( $order_id );
-
-		if ( $user_id === absint( $buyer_id ) ) {
-			// The buyer is already in the group as its administrator; only the course enrollment is missing.
-			if ( llms_is_user_enrolled( $user_id, $course_id ) ) {
-				return null;
-			}
-			if ( llms_enroll_student( $user_id, $course_id, sprintf( 'group_%d', $group_id ) ) ) {
-				return true;
-			}
-			$this->send_error_email( "Error enrolling the buyer $user->user_email in course $course_id for order $order_link" );
-			return false;
-		}
 
 		if ( llms_is_user_enrolled( $user_id, $group_id ) ) {
 			return null;
 		}
 
-		if ( LLMS_Groups_Enrollment::add( $user_id, $group_id, 'wc_order_' . $order_id, 'member' ) ) {
+		// A buyer who lists themselves becomes a member (and a student) too, keeping their administrator role.
+		$role = $user_id === absint( $buyer_id ) ? 'admin' : 'member';
+
+		if ( LLMS_Groups_Enrollment::add( $user_id, $group_id, 'wc_order_' . $order_id, $role ) ) {
 			return true;
 		}
 
@@ -417,28 +471,6 @@ class Woocommerce_Multi_Signup_Groups {
 		if ( isset( $seats['used'], $seats['total'] ) && $seats['used'] > $seats['total'] ) {
 			$group->set( 'seats', absint( $seats['used'] ) );
 		}
-	}
-
-	/**
-	 * Whether the buyer's email address is among the listed students.
-	 *
-	 * @param int                                       $buyer_id WP_User ID of the buyer.
-	 * @param Woocommerce_Multi_Signup_Data_Student[] $students Students.
-	 * @return bool
-	 */
-	protected function is_buyer_listed( $buyer_id, $students ) {
-		$buyer = get_user_by( 'id', $buyer_id );
-		if ( ! $buyer || empty( $buyer->user_email ) ) {
-			return false;
-		}
-
-		foreach ( $students as $student ) {
-			if ( strtolower( $student->student_email ) === strtolower( $buyer->user_email ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

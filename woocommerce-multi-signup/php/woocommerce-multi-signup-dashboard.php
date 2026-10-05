@@ -29,6 +29,7 @@ class Woocommerce_Multi_Signup_Dashboard {
 
 	public function __construct() {
 		add_action( 'lifterlms_student_dashboard_index', array( $this, 'output_managed_groups_section' ), self::SECTION_PRIORITY );
+		add_action( 'woocommerce_account_dashboard', array( $this, 'output_managed_groups_section' ) );
 		add_filter( 'llms_get_student_dashboard_tabs', array( $this, 'link_order_history_to_woocommerce' ), 50 );
 		add_action( 'template_redirect', array( $this, 'maybe_redirect_order_history' ) );
 	}
@@ -131,26 +132,12 @@ class Woocommerce_Multi_Signup_Dashboard {
 			return array();
 		}
 
-		$student = llms_get_student( $user_id );
-		if ( ! $student ) {
-			return array();
-		}
-
-		$enrollments = $student->get_enrollments(
-			'llms_group',
-			array(
-				'limit'   => 100,
-				'status'  => 'enrolled',
-				'orderby' => 'title',
-				'order'   => 'ASC',
-			)
-		);
-
 		$managed = array();
-		foreach ( (array) ( isset( $enrollments['results'] ) ? $enrollments['results'] : array() ) as $group_id ) {
-			$group_id = absint( $group_id );
-
+		foreach ( $this->get_candidate_group_ids( $user_id ) as $group_id => $is_owner ) {
 			$role = LLMS_Groups_Enrollment::get_role( $user_id, $group_id );
+			if ( $is_owner && ! $role ) {
+				$role = 'admin';
+			}
 			if ( ! in_array( $role, self::MANAGER_ROLES, true ) ) {
 				continue;
 			}
@@ -176,7 +163,61 @@ class Woocommerce_Multi_Signup_Dashboard {
 			);
 		}
 
+		usort(
+			$managed,
+			function ( $a, $b ) {
+				return strcasecmp( $a['title'], $b['title'] );
+			}
+		);
+
 		return $managed;
+	}
+
+	/**
+	 * IDs of the groups the user owns or is enrolled in, keyed by group ID.
+	 *
+	 * Buyers own the groups created for their purchases without being members, so
+	 * enrollments alone would miss exactly the groups this section is for.
+	 *
+	 * @param int $user_id WP_User ID.
+	 * @return array<int,bool> Group ID => whether the user is the group's owner (primary administrator).
+	 */
+	protected function get_candidate_group_ids( $user_id ) {
+		$ids = array();
+
+		$owned = get_posts(
+			array(
+				'post_type'      => 'llms_group',
+				'post_status'    => 'publish',
+				'author'         => $user_id,
+				'posts_per_page' => 100,
+				'fields'         => 'ids',
+			)
+		);
+		foreach ( (array) $owned as $group_id ) {
+			$ids[ absint( $group_id ) ] = true;
+		}
+
+		$student = llms_get_student( $user_id );
+		if ( $student ) {
+			$enrollments = $student->get_enrollments(
+				'llms_group',
+				array(
+					'limit'  => 100,
+					'status' => 'enrolled',
+				)
+			);
+			foreach ( (array) ( isset( $enrollments['results'] ) ? $enrollments['results'] : array() ) as $group_id ) {
+				$group_id = absint( $group_id );
+				if ( ! isset( $ids[ $group_id ] ) ) {
+					$ids[ $group_id ] = false;
+				}
+			}
+		}
+
+		unset( $ids[0] );
+
+		return $ids;
 	}
 
 	/**
@@ -192,16 +233,51 @@ class Woocommerce_Multi_Signup_Dashboard {
 	}
 
 	/**
-	 * URL of the LifterLMS Groups "My Groups" dashboard tab, or an empty string when that tab is disabled.
+	 * URL of the "My Groups" tab, or an empty string when it is disabled everywhere.
+	 *
+	 * Prefers the WooCommerce My Account page, where LifterLMS WooCommerce shows the
+	 * LifterLMS tabs, and falls back to the LifterLMS dashboard page.
 	 *
 	 * @return string
 	 */
 	public function get_my_groups_url() {
+		$url = $this->get_woocommerce_account_endpoint_url( 'view-groups' );
+		if ( $url ) {
+			return $url;
+		}
+
 		if ( ! class_exists( 'LLMS_Student_Dashboard' ) || ! LLMS_Student_Dashboard::is_endpoint_enabled( 'view-groups' ) ) {
 			return '';
 		}
 
 		return llms_get_endpoint_url( 'view-groups', '', llms_get_page_url( 'myaccount' ) );
+	}
+
+	/**
+	 * URL of a LifterLMS dashboard tab on the WooCommerce My Account page.
+	 *
+	 * Empty when LifterLMS WooCommerce is inactive or does not show that tab there.
+	 *
+	 * @param string $tab_key LifterLMS dashboard tab key, e.g. "view-groups".
+	 * @return string
+	 */
+	public function get_woocommerce_account_endpoint_url( $tab_key ) {
+		if ( ! function_exists( 'LLMS_WooCommerce' ) || ! function_exists( 'wc_get_account_endpoint_url' ) ) {
+			return '';
+		}
+
+		$plugin      = LLMS_WooCommerce();
+		$integration = $plugin && is_callable( array( $plugin, 'get_integration' ) ) ? $plugin->get_integration() : null;
+		if ( ! $integration || ! is_callable( array( $integration, 'get_account_endpoints' ) ) ) {
+			return '';
+		}
+
+		$endpoints = (array) $integration->get_account_endpoints();
+		if ( empty( $endpoints[ $tab_key ]['endpoint'] ) ) {
+			return '';
+		}
+
+		return (string) wc_get_account_endpoint_url( $endpoints[ $tab_key ]['endpoint'] );
 	}
 
 	/**

@@ -3,7 +3,7 @@
  * Plugin Name: Woocommerce Multi Signup
  * Description: Lets a customer register multiple students, or a different student, for a course in a single checkout. The students are added to a LifterLMS Group the customer manages.
  * Author: Schentrup Software LLC
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author URI: https://www.schentrupsoftware.com/
  * Contributor: Joey Schentrup, https://www.schentrupsoftware.com/
  * Text Domain: woocommerce-multi-signup

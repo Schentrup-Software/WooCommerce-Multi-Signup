@@ -84,6 +84,7 @@ function wcms_default_stubs() {
         return 'https://example.com/my-account/' . $endpoint . '/';
     });
     Functions\when('is_llms_account_page')->justReturn(false);
+    wcms_stub_llms_wc_account_endpoints(['view-groups' => ['endpoint' => 'my-groups', 'title' => 'My Groups']]);
     Functions\when('llms_get_page_id')->justReturn(10);
     Functions\when('wc_get_page_id')->justReturn(20);
     Functions\when('wp_safe_redirect')->justReturn(true);
@@ -98,11 +99,40 @@ function wcms_default_stubs() {
     Functions\when('llms_create_group')->justReturn(null);
     Functions\when('llms_groups_get_group_from_purchase_source')->justReturn(false);
     Functions\when('llms_groups_get_user_groups_for_product')->justReturn([]);
+    Functions\when('llms_group_is_user_primary_admin')->justReturn(false);
+    Functions\when('get_posts')->justReturn([]);
+    Functions\when('llms_groups')->justReturn(new class {
+        public function get_integration() {
+            return new class {
+                public function get_option($key, $default = '') {
+                    return 'visibility' === $key ? 'closed' : $default;
+                }
+            };
+        }
+    });
     Functions\when('llms_groups_lock_seats')->justReturn(false);
     Functions\when('llms_groups_release_seats_lock')->justReturn(null);
 
     LLMS_Groups_Enrollment::reset();
     LLMS_Student_Dashboard::$enabled = ['view-groups'];
+}
+
+/**
+ * Stub LLMS_WooCommerce() so its integration reports the given active My Account endpoints.
+ */
+function wcms_stub_llms_wc_account_endpoints(array $endpoints) {
+    $integration = new class($endpoints) {
+        private $endpoints;
+        public function __construct($endpoints) { $this->endpoints = $endpoints; }
+        public function get_account_endpoints($active_only = true) { return $this->endpoints; }
+    };
+    $plugin = new class($integration) {
+        public $version = '3.1.0';
+        private $integration;
+        public function __construct($integration) { $this->integration = $integration; }
+        public function get_integration() { return $this->integration; }
+    };
+    Functions\when('LLMS_WooCommerce')->justReturn($plugin);
 }
 
 wcms_default_stubs();

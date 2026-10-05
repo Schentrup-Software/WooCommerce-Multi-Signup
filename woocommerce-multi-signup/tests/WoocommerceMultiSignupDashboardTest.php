@@ -62,7 +62,9 @@ class WoocommerceMultiSignupDashboardTest extends TestCase {
 
         $groups = $this->dashboard->get_managed_groups(456);
 
-        $this->assertSame([10, 30], array_column($groups, 'id'));
+        // Sorted by title: "Precinct 9" before "Smith Family".
+        $this->assertSame([30, 10], array_column($groups, 'id'));
+        $this->assertSame('Leader', $groups[0]['role_label']);
         $this->assertSame([
             'id' => 10,
             'title' => 'Smith Family',
@@ -73,8 +75,31 @@ class WoocommerceMultiSignupDashboardTest extends TestCase {
             'seats_total' => 4,
             'url' => 'https://example.com/groups/10',
             'manage_url' => 'https://example.com/groups/10/members/',
-        ], $groups[0]);
-        $this->assertSame('Leader', $groups[1]['role_label']);
+        ], $groups[1]);
+    }
+
+    public function testGroupsTheUserOwnsAreIncludedEvenWithoutMembership() {
+        // The buyer owns group 40 (post author) but is not enrolled in it and has no role meta yet.
+        Functions\when('get_posts')->alias(function($args) {
+            return 456 === $args['author'] && 'llms_group' === $args['post_type'] ? [40, 10] : [];
+        });
+        $this->studentInGroups([10, 20], [10 => 'admin', 20 => 'member']);
+        $owned = createMockGroup(40, 'Agency Cohort');
+        $this->groupsById([10 => createMockGroup(10, 'Smith Family'), 20 => createMockGroup(20), 40 => $owned]);
+
+        $groups = $this->dashboard->get_managed_groups(456);
+
+        $this->assertSame([40, 10], array_column($groups, 'id'));
+        $this->assertSame('admin', $groups[0]['role']);
+        $this->assertSame('Group Administrator', $groups[0]['role_label']);
+    }
+
+    public function testOwnedGroupsAreFoundWhenTheUserHasNoGroupEnrollmentsAtAll() {
+        Functions\when('get_posts')->justReturn([40]);
+        Functions\when('llms_get_student')->justReturn(null);
+        $this->groupsById([40 => createMockGroup(40, 'Agency Cohort')]);
+
+        $this->assertSame([40], array_column($this->dashboard->get_managed_groups(456), 'id'));
     }
 
     public function testGroupsThatNoLongerExistAreSkipped() {
@@ -118,10 +143,25 @@ class WoocommerceMultiSignupDashboardTest extends TestCase {
         $this->assertStringContainsString('Smith &lt;Family&gt;', $output);
         $this->assertStringContainsString('Title 900 · Group Administrator · 3 of 4 seats used', $output);
         $this->assertStringContainsString('href="https://example.com/groups/10/members/">Manage students</a>', $output);
-        $this->assertStringContainsString('<footer class="llms-sd-section-footer"><a class="llms-button-secondary" href="https://example.com/dashboard/view-groups/">View All My Groups</a></footer>', $output);
+        // "View all" goes to the WooCommerce My Account page, not the LifterLMS dashboard page.
+        $this->assertStringContainsString('<footer class="llms-sd-section-footer"><a class="llms-button-secondary" href="https://example.com/my-account/my-groups/">View All My Groups</a></footer>', $output);
+    }
+
+    public function testSectionAlsoRendersOnTheWooCommerceAccountDashboard() {
+        $this->assertNotFalse(has_action('woocommerce_account_dashboard', [$this->dashboard, 'output_managed_groups_section']));
+    }
+
+    public function testViewAllLinkFallsBackToTheLifterLmsDashboardWhenMyAccountLacksTheTab() {
+        wcms_stub_llms_wc_account_endpoints(['view-courses' => ['endpoint' => 'my-courses', 'title' => 'My Courses']]);
+
+        $this->assertSame('https://example.com/dashboard/view-groups/', $this->dashboard->get_my_groups_url());
+
+        LLMS_Student_Dashboard::$enabled = [];
+        $this->assertSame('', $this->dashboard->get_my_groups_url());
     }
 
     public function testViewAllLinkIsOmittedWhenTheGroupsTabIsDisabled() {
+        wcms_stub_llms_wc_account_endpoints([]);
         LLMS_Student_Dashboard::$enabled = [];
         $this->studentInGroups([10], [10 => 'leader']);
         $this->groupsById([10 => createMockGroup(10)]);

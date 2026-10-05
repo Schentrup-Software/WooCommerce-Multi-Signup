@@ -8,6 +8,25 @@ use PHPUnit\Framework\TestCase;
 use Brain\Monkey;
 use Brain\Monkey\Functions;
 
+require_once __DIR__ . '/../php/woocommerce-multi-signup-data.php';
+require_once __DIR__ . '/../php/woocommerce-multi-signup-groups.php';
+
+/**
+ * Lets tests control the group post that gets "created" and inspect the creation arguments.
+ */
+class WCMS_Testable_Groups extends Woocommerce_Multi_Signup_Groups {
+    /** @var array[] Arguments of every create_group_post() call. */
+    public $created = [];
+
+    /** @var LLMS_Group|null What create_group_post() returns. */
+    public $group_to_create = null;
+
+    protected function create_group_post( $args ) {
+        $this->created[] = $args;
+        return $this->group_to_create;
+    }
+}
+
 class WoocommerceMultiSignupGroupsTest extends TestCase {
 
     /** @var Woocommerce_Multi_Signup_Groups */
@@ -30,7 +49,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
             return true;
         });
 
-        $this->groups = new Woocommerce_Multi_Signup_Groups();
+        $this->groups = new WCMS_Testable_Groups();
     }
 
     protected function tearDown(): void {
@@ -117,12 +136,11 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
 
     public function testFulfillDoesNothingWithoutStudents() {
         $order = createMockOrder(123, 456, []);
-        $this->record('llms_create_group', createMockGroup());
 
         $this->groups->fulfill_order_item($order, createMockOrderItem(123, 1), createMockPlan(), 1);
 
         $this->assertEmpty($order->notes);
-        $this->assertEmpty($this->calls['llms_create_group']);
+        $this->assertSame([], $this->groups->created);
         $this->assertEmpty(LLMS_Groups_Enrollment::$calls);
         $this->assertEmpty($this->emails);
     }
@@ -145,11 +163,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
             return [];
         });
 
-        $created_with = null;
-        Functions\when('llms_create_group')->alias(function($args) use (&$created_with, $group) {
-            $created_with = $args;
-            return $group;
-        });
+        $this->groups->group_to_create = $group;
 
         $this->groups->fulfill_order_item($order, $item, $plan, 2);
 
@@ -160,13 +174,19 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         // No existing group for this buyer and course, so one was created.
         $this->assertSame([[456, 456]], $looked_up);
         // The buyer owns the group and the group is tied to the purchased course.
+        $this->assertCount(1, $this->groups->created);
+        $created_with = $this->groups->created[0];
         $this->assertSame(456, $created_with['post_author']);
         $this->assertSame('Title 456 - Pat Buyer', $created_with['post_title']);
+        $this->assertSame('publish', $created_with['post_status']);
+        $this->assertSame(['_llms_visibility' => 'closed'], $created_with['meta_input']);
         $this->assertSame(456, $group->props['post_id']);
         $this->assertSame(123, $group->props['wc_order_id']);
         $this->assertSame(55, $group->props['wc_order_item_id']);
-        // 2 purchased seats plus one for the buyer as administrator.
-        $this->assertSame(3, $group->props['seats']);
+        // Exactly the 2 purchased seats: the buyer manages the group without holding one.
+        $this->assertSame(2, $group->props['seats']);
+        // The buyer is the primary administrator by role, not by membership.
+        $this->assertSame([[456, 777, 'primary_admin']], LLMS_Groups_Enrollment::$role_updates);
 
         // Both students became members through the group (not direct course enrollment).
         $this->assertCount(2, LLMS_Groups_Enrollment::$calls);
@@ -184,7 +204,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData(['new@example.com' => ['New', 'User']])]);
         $item = createMockOrderItem(123, 1);
         $group = createMockGroup(777);
-        Functions\when('llms_create_group')->justReturn($group);
+        $this->groups->group_to_create = $group;
 
         $buyer = createMockUser(456, 'buyer@example.com', 'buyer');
         $new = createMockUser(791, 'new@example.com', 'new');
@@ -231,7 +251,6 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         Functions\when('get_llms_group')->alias(function($id) use ($existing) {
             return 555 === $id ? $existing : createMockGroup($id);
         });
-        $this->record('llms_create_group', createMockGroup(1));
         $this->record('llms_groups_lock_seats', true);
         $this->record('llms_groups_release_seats_lock', null);
 
@@ -244,7 +263,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         $this->groups->fulfill_order_item($order, $item, $plan, 2);
 
         // No new group; two purchased seats added to the existing one under the seat lock.
-        $this->assertEmpty($this->calls['llms_create_group']);
+        $this->assertSame([], $this->groups->created);
         $this->assertSame(4, $existing->props['seats']);
         $this->assertSame([[555]], $this->calls['llms_groups_lock_seats']);
         $this->assertSame([[555]], $this->calls['llms_groups_release_seats_lock']);
@@ -263,21 +282,21 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         $this->assertEmpty($this->emails);
     }
 
-    public function testRepeatPurchaseByBuyerListedAsStudentAddsOneSeatLess() {
+    public function testRepeatPurchaseByBuyerListedAsStudentAddsASeatForEveryStudent() {
         $order = createMockOrder(124, 456, ['Student Data' => $this->studentData(['buyer@example.com' => ['Pat', 'Buyer'], 'kid@example.com' => ['Kid', 'One']])]);
         $existing = createMockGroup(555);
         $existing->props['seats'] = 3;
         Functions\when('llms_groups_get_user_groups_for_product')->justReturn([(object) ['ID' => 555]]);
         Functions\when('get_llms_group')->justReturn($existing);
-        $this->record('llms_create_group', createMockGroup(1));
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(789, 'kid@example.com')]);
 
         $this->groups->fulfill_order_item($order, createMockOrderItem(123, 2, 66), createMockPlan(900, 456), 2);
 
-        // The buyer already holds a seat as administrator, so only the other student needs one.
-        $this->assertEmpty($this->calls['llms_create_group']);
-        $this->assertSame(4, $existing->props['seats']);
-        $this->assertSame([789], array_column(LLMS_Groups_Enrollment::$calls, 'user_id'));
+        // Both purchased seats are added; the buyer joins as a member too (keeping the admin role).
+        $this->assertSame([], $this->groups->created);
+        $this->assertSame(5, $existing->props['seats']);
+        $this->assertSame([456, 789], array_column(LLMS_Groups_Enrollment::$calls, 'user_id'));
+        $this->assertSame(['admin', 'member'], array_column(LLMS_Groups_Enrollment::$calls, 'role'));
     }
 
     public function testRepeatPurchaseDoesNotAddSeatsTwiceForTheSameItem() {
@@ -306,13 +325,9 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         ]])]);
         $plan = createMockPlan(900, 456);
         $group = createMockGroup(777);
-        $created = [];
-        Functions\when('llms_create_group')->alias(function($args) use (&$created, $group) {
-            $created[] = $args;
-            return $group;
-        });
-        Functions\when('llms_groups_get_user_groups_for_product')->alias(function() use (&$created) {
-            return $created ? [(object) ['ID' => 777]] : [];
+        $this->groups->group_to_create = $group;
+        Functions\when('llms_groups_get_user_groups_for_product')->alias(function() {
+            return $this->groups->created ? [(object) ['ID' => 777]] : [];
         });
         Functions\when('get_llms_group')->justReturn($group);
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(1, 'a@example.com'), createMockUser(2, 'b@example.com')]);
@@ -320,9 +335,9 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         $this->groups->fulfill_order_item($order, createMockOrderItem(123, 1, 1), $plan, 1);
         $this->groups->fulfill_order_item($order, createMockOrderItem(124, 1, 2), $plan, 1);
 
-        $this->assertCount(1, $created);
-        // 1 seat + buyer from the first item, then 1 more seat from the second item.
-        $this->assertSame(3, $group->props['seats']);
+        $this->assertCount(1, $this->groups->created);
+        // 1 seat from the first item, then 1 more seat from the second item.
+        $this->assertSame(2, $group->props['seats']);
         $this->assertSame([777, 777], array_column(LLMS_Groups_Enrollment::$calls, 'group_id'));
     }
 
@@ -336,13 +351,12 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         Functions\when('get_llms_group')->alias(function($id) use ($group) {
             return 555 === $id ? $group : null;
         });
-        $this->record('llms_create_group', createMockGroup(1));
 
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(789, 'john@example.com')]);
 
         $this->groups->fulfill_order_item($order, $item, $plan, 1);
 
-        $this->assertEmpty($this->calls['llms_create_group']);
+        $this->assertSame([], $this->groups->created);
         $this->assertSame(789, LLMS_Groups_Enrollment::$calls[0]['user_id']);
         $this->assertSame(555, LLMS_Groups_Enrollment::$calls[0]['group_id']);
         // Seats were topped up so the buyer plus the student both fit.
@@ -359,7 +373,6 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
         Functions\when('get_llms_group')->alias(function($id) use ($group) {
             return 777 === $id ? $group : null;
         });
-        $this->record('llms_create_group', createMockGroup(1));
         // John is already a member of the group.
         Functions\when('llms_is_user_enrolled')->alias(function($user_id, $post_id) {
             return 789 === $user_id && 777 === $post_id;
@@ -371,36 +384,71 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
 
         $this->assertCount(1, $order->notes);
         $this->assertStringContainsString('0 of 1 student(s)', $order->notes[0]);
-        $this->assertEmpty($this->calls['llms_create_group']);
+        $this->assertSame([], $this->groups->created);
         $this->assertEmpty(LLMS_Groups_Enrollment::$calls);
         $this->assertEmpty($this->emails);
     }
 
-    public function testBuyerListedAsStudentIsEnrolledInTheCourseDirectly() {
+    public function testBuyerListedAsStudentBecomesAMemberKeepingTheAdminRole() {
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData(['buyer@example.com' => ['Pat', 'Buyer'], 'kid@example.com' => ['Kid', 'Buyer']])]);
         $item = createMockOrderItem(123, 2);
         $group = createMockGroup(777);
-        Functions\when('llms_create_group')->justReturn($group);
+        $this->groups->group_to_create = $group;
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(789, 'kid@example.com')]);
-
-        $this->record('llms_enroll_student', true);
 
         $this->groups->fulfill_order_item($order, $item, createMockPlan(900, 456), 2);
 
-        // The buyer is enrolled in the course with the group as the trigger, like any member.
-        $this->assertSame([[456, 456, 'group_777']], $this->calls['llms_enroll_student']);
-        // The buyer already occupies a seat as administrator, so no extra seat is added.
+        // The buyer listed themselves, so they take one of the 2 purchased seats as a member with admin role.
         $this->assertSame(2, $group->props['seats']);
-        // Only the other student goes through group enrollment.
-        $this->assertCount(1, LLMS_Groups_Enrollment::$calls);
-        $this->assertSame(789, LLMS_Groups_Enrollment::$calls[0]['user_id']);
+        $this->assertSame([
+            ['user_id' => 456, 'group_id' => 777, 'trigger' => 'wc_order_123', 'role' => 'admin'],
+            ['user_id' => 789, 'group_id' => 777, 'trigger' => 'wc_order_123', 'role' => 'member'],
+        ], LLMS_Groups_Enrollment::$calls);
+    }
+
+    public function testBuyerIsNotEnrolledInTheGroupUnlessListed() {
+        $order = createMockOrder(123, 456, ['Student Data' => $this->studentData(['kid@example.com' => ['Kid', 'One']])]);
+        $this->groups->group_to_create = createMockGroup(777);
+        $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(789, 'kid@example.com')]);
+
+        $this->groups->fulfill_order_item($order, createMockOrderItem(123, 1), createMockPlan(900, 456), 1);
+
+        $this->assertSame([789], array_column(LLMS_Groups_Enrollment::$calls, 'user_id'));
+        $this->assertSame([[456, 777, 'primary_admin']], LLMS_Groups_Enrollment::$role_updates);
+    }
+
+    public function testGroupManagersCanViewClosedGroupsTheyAreNotMembersOf() {
+        $this->assertNotFalse(has_filter('llms_groups_profile_serve_404', [$this->groups, 'allow_managers_to_view_group']));
+        $group = createMockGroup(777);
+
+        // Groups would not serve a 404 anyway: leave it alone.
+        $this->assertFalse($this->groups->allow_managers_to_view_group(false, $group));
+
+        // A plain visitor with no role stays blocked.
+        $this->assertTrue($this->groups->allow_managers_to_view_group(true, $group));
+
+        // The group's owner (primary administrator) gets in.
+        Functions\when('llms_group_is_user_primary_admin')->justReturn(true);
+        $this->assertFalse($this->groups->allow_managers_to_view_group(true, $group));
+
+        // So does anyone holding a manager role, while members and strangers do not.
+        Functions\when('llms_group_is_user_primary_admin')->justReturn(false);
+        LLMS_Groups_Enrollment::$roles[456][777] = 'leader';
+        $this->assertFalse($this->groups->allow_managers_to_view_group(true, $group));
+        LLMS_Groups_Enrollment::$roles[456][777] = 'member';
+        $this->assertTrue($this->groups->allow_managers_to_view_group(true, $group));
+
+        // Logged-out visitors are never let through.
+        Functions\when('get_current_user_id')->justReturn(0);
+        LLMS_Groups_Enrollment::$roles[456][777] = 'admin';
+        $this->assertTrue($this->groups->allow_managers_to_view_group(true, $group));
     }
 
     public function testExtraStudentsBeyondQuantityAreReportedAndSkipped() {
         $students = ['a@example.com' => ['A', 'One'], 'b@example.com' => ['B', 'Two'], 'c@example.com' => ['C', 'Three']];
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData($students)]);
         $item = createMockOrderItem(123, 2);
-        Functions\when('llms_create_group')->justReturn(createMockGroup(777));
+        $this->groups->group_to_create = createMockGroup(777);
         $this->usersByEmail([
             createMockUser(456, 'buyer@example.com'),
             createMockUser(1, 'a@example.com'),
@@ -418,7 +466,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
 
     public function testGroupAddFailureIsReported() {
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData(['john@example.com' => ['John', 'Doe']])]);
-        Functions\when('llms_create_group')->justReturn(createMockGroup(777));
+        $this->groups->group_to_create = createMockGroup(777);
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(789, 'john@example.com')]);
         LLMS_Groups_Enrollment::$return = false;
 
@@ -431,7 +479,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
     public function testGroupCreationFailureIsReported() {
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData(['john@example.com' => ['John', 'Doe']])]);
         $this->usersByEmail([createMockUser(456, 'buyer@example.com')]);
-        Functions\when('llms_create_group')->justReturn(null);
+        $this->groups->group_to_create = null;
 
         $this->groups->fulfill_order_item($order, createMockOrderItem(123, 1), createMockPlan(900, 456), 1);
 
@@ -443,11 +491,10 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
 
     public function testOrderWithoutCustomerIsReported() {
         $order = createMockOrder(123, 0, ['Student Data' => $this->studentData(['john@example.com' => ['John', 'Doe']])]);
-        $this->record('llms_create_group', createMockGroup(1));
 
         $this->groups->fulfill_order_item($order, createMockOrderItem(123, 1), createMockPlan(900, 456), 1);
 
-        $this->assertEmpty($this->calls['llms_create_group']);
+        $this->assertSame([], $this->groups->created);
         $this->assertCount(1, $this->emails);
         $this->assertStringContainsString('no customer account', $this->emails[0]);
     }
@@ -455,7 +502,7 @@ class WoocommerceMultiSignupGroupsTest extends TestCase {
     public function testUserCreationFailureIsReportedAndOthersStillProceed() {
         $students = ['bad@example.com' => ['Bad', 'One'], 'good@example.com' => ['Good', 'Two']];
         $order = createMockOrder(123, 456, ['Student Data' => $this->studentData($students)]);
-        Functions\when('llms_create_group')->justReturn(createMockGroup(777));
+        $this->groups->group_to_create = createMockGroup(777);
         $this->usersByEmail([createMockUser(456, 'buyer@example.com'), createMockUser(2, 'good@example.com')]);
         Functions\when('wp_create_user')->justReturn(new WP_Error('existing_user_login', 'Could not create'));
 

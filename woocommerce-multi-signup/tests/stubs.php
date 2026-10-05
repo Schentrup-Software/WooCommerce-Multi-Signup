@@ -73,6 +73,20 @@ namespace {
     }
 
     /**
+     * Stand-in for the LifterLMS Groups model so the plugin's class_exists() check passes and
+     * Mockery mocks (see createMockGroup()) extend a real class.
+     */
+    if (!class_exists('LLMS_Group')) {
+        #[\AllowDynamicProperties]
+        class LLMS_Group {
+            public function __construct($model = null, $args = []) {}
+            public function get($key) { return ''; }
+            public function set($key, $value = '') { return true; }
+            public function get_seats($use_cache = true) { return ['total' => 0, 'used' => 0, 'open' => 0]; }
+        }
+    }
+
+    /**
      * Records every call so tests can assert on who was added to which group.
      */
     if (!class_exists('LLMS_Groups_Enrollment')) {
@@ -84,6 +98,7 @@ namespace {
                 self::$calls = [];
                 self::$return = true;
                 self::$roles = [];
+                self::$role_updates = [];
             }
 
             /** @var array<int,array<int,string>> user ID => group ID => role, for get_role(). */
@@ -96,6 +111,15 @@ namespace {
 
             public static function get_role($user_id, $group_id) {
                 return self::$roles[$user_id][$group_id] ?? '';
+            }
+
+            /** @var array<int,array> Arguments of every update_role() call. */
+            public static $role_updates = [];
+
+            public static function update_role($user_id, $group_id, $role) {
+                self::$role_updates[] = [$user_id, $group_id, $role];
+                self::$roles[$user_id][$group_id] = 'primary_admin' === $role ? 'admin' : $role;
+                return true;
             }
         }
     }
